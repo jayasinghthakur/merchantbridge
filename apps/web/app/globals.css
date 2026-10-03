@@ -1,0 +1,185 @@
+@import 'tailwindcss';
+
+/*
+ * MerchantBridge theme. Raw palette lives in --mb-* custom properties that swap per theme; Tailwind utilities
+ * (bg-surface, text-ink, border-line, ...) point at them through `@theme inline`, so no dark: variants are needed.
+ * Theme selection: prefers-color-scheme by default, overridden by <html data-theme="light|dark">.
+ */
+
+:root {
+  color-scheme: light;
+  --mb-surface: #f7f6f2;
+  --mb-raised: #ffffff;
+  --mb-sunken: #efede6;
+  --mb-ink: #0f1a17;
+  --mb-ink-muted: #44524d;
+  --mb-ink-subtle: #66736e;
+  --mb-line: #dcd9cf;
+  --mb-line-strong: #c4c0b3;
+  --mb-brand: #0b6e58;
+  --mb-brand-hover: #095c49;
+  --mb-on-brand: #ffffff;
+  --mb-brand-soft: #e2efe9;
+  --mb-brand-ink: #0b6e58;
+  --mb-accent: #e8912a;
+  --mb-accent-soft: #fbeedc;
+  --mb-accent-ink: #8a4b07;
+  --mb-danger: #b42318;
+  --mb-danger-soft: #fbe9e7;
+  --mb-focus: #0b6e58;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --mb-surface: #0e1513;
+    --mb-raised: #141d1a;
+    --mb-sunken: #0a100e;
+    --mb-ink: #ecf2ef;
+    --mb-ink-muted: #b3c0bb;
+    --mb-ink-subtle: #8c9a95;
+    --mb-line: #25312d;
+    --mb-line-strong: #34433e;
+    --mb-brand: #3dd6a8;
+    --mb-brand-hover: #5fe0b9;
+    --mb-on-brand: #0e1513;
+    --mb-brand-soft: #12302a;
+    --mb-brand-ink: #3dd6a8;
+    --mb-accent: #f5b14f;
+    --mb-accent-soft: #3a2a12;
+    --mb-accent-ink: #f5b14f;
+    --mb-danger: #f97066;
+    --mb-danger-soft: #3b1714;
+    --mb-focus: #3dd6a8;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --mb-surface: #0e1513;
+  --mb-raised: #141d1a;
+  --mb-sunken: #0a100e;
+  --mb-ink: #ecf2ef;
+  --mb-ink-muted: #b3c0bb;
+  --mb-ink-subtle: #8c9a95;
+  --mb-line: #25312d;
+  --mb-line-strong: #34433e;
+  --mb-brand: #3dd6a8;
+  --mb-brand-hover: #5fe0b9;
+  --mb-on-brand: #0e1513;
+  --mb-brand-soft: #12302a;
+  --mb-brand-ink: #3dd6a8;
+  --mb-accent: #f5b14f;
+  --mb-accent-soft: #3a2a12;
+  --mb-accent-ink: #f5b14f;
+  --mb-danger: #f97066;
+  --mb-danger-soft: #3b1714;
+  --mb-focus: #3dd6a8;
+}
+
+@theme inline {
+  --color-surface: var(--mb-surface);
+  --color-raised: var(--mb-raised);
+  --color-sunken: var(--mb-sunken);
+  --color-ink: var(--mb-ink);
+  --color-ink-muted: var(--mb-ink-muted);
+  --color-ink-subtle: var(--mb-ink-subtle);
+  --color-line: var(--mb-line);
+  --color-line-strong: var(--mb-line-strong);
+  --color-brand: var(--mb-brand);
+  --color-brand-hover: var(--mb-brand-hover);
+  --color-on-brand: var(--mb-on-brand);
+  --color-brand-soft: var(--mb-brand-soft);
+  --color-brand-ink: var(--mb-brand-ink);
+  --color-accent: var(--mb-accent);
+  --color-accent-soft: var(--mb-accent-soft);
+  --color-accent-ink: var(--mb-accent-ink);
+  --color-danger: var(--mb-danger);
+  --color-danger-soft: var(--mb-danger-soft);
+  --color-focus: var(--mb-focus);
+
+  --font-sans:
+    var(--font-manrope), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+  --font-mono:
+    var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--mb-surface);
+    color: var(--mb-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--mb-focus);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--mb-brand-soft);
+  }
+
+  code,
+  pre,
+  kbd {
+    font-family: var(--font-mono);
+  }
+}
+
+@layer components {
+  .mb-card {
+    background-color: var(--mb-raised);
+    border: 1px solid var(--mb-line);
+    border-radius: var(--radius-md);
+  }
+
+  .mb-code {
+    background-color: var(--mb-sunken);
+    border: 1px solid var(--mb-line);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.55;
+  }
+
+  .mb-input {
+    width: 100%;
+    background-color: var(--mb-raised);
+    border: 1px solid var(--mb-line-strong);
+    border-radius: var(--radius-sm);
+    color: var(--mb-ink);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9375rem;
+  }
+
+  .mb-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .mb-input::placeholder {
+    color: var(--mb-ink-subtle);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

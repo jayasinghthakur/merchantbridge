@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "allowJs": false,
+    "incremental": true,
+    "plugins": [{ "name": "next" }]
+  },
+  "include": [
+    "next-env.d.ts",
+    "env.d.ts",
+    "next.config.ts",
+    "playwright.config.ts",
+    "vitest.config.ts",
+    "app",
+    "components",
+    "lib",
+    "e2e",
+    "test",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}
