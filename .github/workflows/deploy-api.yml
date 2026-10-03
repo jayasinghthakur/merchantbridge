@@ -1,4 +1,4 @@
-# OPTIONAL, PAID ALTERNATIVE to .github/workflows/deploy-hf-space.yml (the free primary host, ADR-0009).
+# OPTIONAL, PAID ALTERNATIVE to the free Vercel deployment (scripts/deploy-vercel.sh, ADR-0009).
 # Without the FLY_API_TOKEN secret this job only posts a "Deploy skipped" notice and succeeds, so it is safe to keep.
 name: Deploy API to Fly.io (optional)
 
@@ -32,7 +32,7 @@ jobs:
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       # Repo variables (Settings → Variables). FLY_CONFIG defaults to the api app's fly.toml. FLY_API_URL is the Fly
-      # app's origin (API_URL belongs to the primary host and the keep-warm workflow).
+      # app's origin (the free primary deployment lives on Vercel).
       FLY_CONFIG: ${{ vars.FLY_CONFIG || 'apps/api/fly.toml' }}
       FLY_API_URL: ${{ vars.FLY_API_URL }}
     steps:

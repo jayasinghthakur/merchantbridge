@@ -110,8 +110,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # Builds the API image from apps/api/Dockerfile (context = repo root), without pushing it anywhere. The Hugging Face
-  # Space builds the same Dockerfile over the same files (deploy/hf-space/assemble.sh). Docker is not installed on the
+  # Builds the API image from apps/api/Dockerfile (context = repo root), without pushing it anywhere. The image is the
+  # self-hosting option (the hosted API runs as a Vercel Function). Docker is not installed on the
   # dev machine, so this job is the first real build of apps/api/Dockerfile.
   docker:
     name: docker build (api image)

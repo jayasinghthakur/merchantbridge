@@ -2,17 +2,15 @@
 #
 # MerchantBridge API (apps/api). The build context is the pnpm WORKSPACE ROOT:
 #   docker build -f apps/api/Dockerfile .           (CI, local; context = repo root)
-#   Hugging Face Space (the $0 host)                 deploy/hf-space/assemble.sh copies this file to the Space root
-#                                                    as `Dockerfile`, next to the same workspace files, so the Space
-#                                                    root is the context and nothing below changes
 #   flyctl deploy . --config apps/api/fly.toml       (optional paid alternative; fly.toml's [build] points here)
-# What enters the context is decided by the allow-list in /.dockerignore (no .env*, docs, apps/web, evals, tests);
-# the Space gets the same files and a copy of that .dockerignore.
+# The hosted $0 deployment does not use this image: it runs apps/api as a Vercel Function (scripts/deploy-vercel.sh).
+# The image is for self-hosting on any container platform. What enters the context is decided by the allow-list in
+# /.dockerignore (no .env*, docs, apps/web, evals, tests).
 #
-# Host contract: listens on $PORT (default 8787 below; the Space card sets `app_port: 8787` to match) on 0.0.0.0
-# (server.ts binds 0.0.0.0 whenever NODE_ENV=production), runs as uid 1000 (Hugging Face Spaces run containers as
-# uid 1000), keeps no state on disk (data lives in Postgres and Redis; only tsx's transform cache goes to /tmp), so
-# an ephemeral disk is fine, and reads all configuration from environment variables (Space variables and secrets).
+# Host contract: listens on $PORT (default 8787 below) on 0.0.0.0 (server.ts binds 0.0.0.0 whenever
+# NODE_ENV=production), runs as non-root uid 1000, keeps no state on disk (data lives in Postgres and Redis; only
+# tsx's transform cache goes to /tmp), so an ephemeral disk is fine, and reads all configuration from environment
+# variables.
 #
 # There is no compile step: the API and the workspace packages run as TypeScript source under tsx (a runtime
 # dependency of @mb/api; packages export ./src/index.ts). The build stage only installs production dependencies for
@@ -72,8 +70,7 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps/api ./apps/api
 
-# Non-root user that ships with the official Node images (uid/gid 1000): the uid Hugging Face Spaces require, and
-# CI asserts `id -u` = 1000.
+# Non-root user that ships with the official Node images (uid/gid 1000); CI asserts `id -u` = 1000.
 USER node
 WORKDIR /app/apps/api
 
@@ -88,6 +85,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # resolves from this WORKDIR). Not the tsx CLI: it runs the app as a child and SIGKILLs it when the child does not
 # acknowledge a relayed SIGTERM within 30 ms (measured: a busy event loop loses its graceful shutdown). Here Node is
 # PID 1 and server.ts's own SIGTERM handler drains requests and flushes usage events, then force-exits after 15 s.
-# Migrations never run on boot: apps/api/scripts/migrate.ts applies them before a deploy (by hand against Neon for the
-# Hugging Face Space, as fly.toml's release_command on Fly; docs/deploy.md).
+# Migrations never run on boot: apps/api/scripts/migrate.ts applies them before a deploy (by hand against Neon, or as
+# fly.toml's release_command on Fly; docs/deploy.md).
 CMD ["node", "--import", "tsx", "src/server.ts"]

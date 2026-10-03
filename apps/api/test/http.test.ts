@@ -56,7 +56,7 @@ describe('health', () => {
     ).toBe(403);
   });
 
-  it('GET / answers 200 for platform readiness probes (Hugging Face Spaces), whatever the Host', async () => {
+  it('GET / answers 200 for platform readiness probes, whatever the Host', async () => {
     const { app } = await setup();
     const body = { service: 'merchantbridge-api', version: '0.1.0', docs: '/api/status' };
     const res = await app.inject({ url: '/' });

@@ -12,6 +12,7 @@ const LITERAL = ['zoho', 'apis'].join('');
 const SKIP_DIRS = new Set([
   'node_modules',
   '.next',
+  '.vercel', // generated deploy bundles contain the bundled ZohoClient
   'dist',
   'coverage',
   'test',

@@ -99,7 +99,7 @@ function bearerMatches(header: string | undefined, expected: string): boolean {
 /**
  * Builds the single Fastify deployable. Fastify is constructed directly (not createMcpFastifyApp, which accepts
  * no logger/trustProxy options) and the SDK's `hostHeaderValidation` hook is added for every route except
- * /health/* and the bare `/` (platform health/readiness checks, e.g. Hugging Face Spaces probing `/`, may use an
+ * /health/* and the bare `/` (platform health/readiness checks probing `/` may use an
  * internal Host; both only return static, non-sensitive JSON).
  */
 export async function buildApp(
@@ -182,7 +182,7 @@ export async function buildApp(
   });
 
   // ---- health ----
-  // Hosts such as Hugging Face Spaces treat a 2xx on `/` as "ready"; it only names the service.
+  // Some hosts treat a 2xx on `/` as "ready"; it only names the service.
   app.get('/', () => ({
     service: 'merchantbridge-api',
     version: ctx.version,

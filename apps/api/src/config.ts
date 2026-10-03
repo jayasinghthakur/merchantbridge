@@ -88,9 +88,9 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(8787),
   HOST: z.string().default('127.0.0.1'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
-  /** Public base URL of this API, e.g. https://merchantbridge-api.fly.dev */
+  /** Public base URL of this API, e.g. https://merchantbridge-api.vercel.app */
   MB_PUBLIC_API_URL: z.string().url().default('http://localhost:8787'),
-  /** Public base URL of the web app, e.g. https://merchantbridge.vercel.app */
+  /** Public base URL of the web app, e.g. https://merchantbridge-web.vercel.app */
   MB_PUBLIC_WEB_URL: z.string().url().default('http://localhost:3000'),
   /** Extra hostnames accepted by the MCP Host-header check (the public API host is always included). */
   MB_ALLOWED_HOSTS: list,
