@@ -197,6 +197,11 @@ def main() -> None:
     p.add_argument("--skip-deploy", action="store_true", help="do not trigger the deploy workflow")
     args = p.parse_args()
 
+    # pnpm (via corepack) and gh were installed into ~/.local/bin, which a plain Terminal PATH may not include.
+    local_bin = os.path.expanduser("~/.local/bin")
+    if os.path.isdir(local_bin) and local_bin not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = local_bin + os.pathsep + os.environ.get("PATH", "")
+
     for tool in ("pnpm", "gh", "git"):
         if not shutil.which(tool):
             die(f"'{tool}' is required on PATH")
