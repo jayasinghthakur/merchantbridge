@@ -19,6 +19,11 @@ export const API_ROUTES = {
   /** GET ?dc=in&invite=CODE → 302 to Zoho consent. */
   oauthStart: '/oauth/zoho/start',
   oauthCallback: '/oauth/zoho/callback',
+  /**
+   * POST with `Authorization: Bearer mb_live_…`: revokes the tenant's Zoho refresh token at Zoho, marks the
+   * connection revoked and revokes the calling key. 200 `{ revoked_locally, revoked_at_zoho }`; a revoked key → 401.
+   */
+  disconnect: '/api/connection/disconnect',
 } as const;
 
 /**
@@ -27,6 +32,8 @@ export const API_ROUTES = {
  *   failure → `${WEB}/connect/error?reason=<ConnectErrorReason>`
  */
 export type ConnectErrorReason =
+  /** This deployment has no Zoho client / vault / invite configured: connecting real organizations is off. */
+  | 'connect_disabled'
   | 'invalid_invite'
   | 'invalid_state'
   | 'access_denied'
@@ -50,7 +57,13 @@ export interface StatusResponse {
 
 export type PublicToolDescriptor = Pick<
   ToolDescriptor,
-  'name' | 'title' | 'description' | 'inputJsonSchema' | 'outputJsonSchema' | 'annotations' | 'scopes'
+  | 'name'
+  | 'title'
+  | 'description'
+  | 'inputJsonSchema'
+  | 'outputJsonSchema'
+  | 'annotations'
+  | 'scopes'
 >;
 
 export interface ToolsResponse {

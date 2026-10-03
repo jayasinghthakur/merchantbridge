@@ -37,7 +37,11 @@ function resolve(schema: unknown): JsonObject | null {
     if (nonNull.length !== 1) return null;
     const inner = resolve(nonNull[0]);
     if (!inner) return null;
-    return { ...inner, description: schema.description ?? inner.description, default: schema.default ?? inner.default };
+    return {
+      ...inner,
+      description: schema.description ?? inner.description,
+      default: schema.default ?? inner.default,
+    };
   }
   if (Array.isArray(schema.type)) {
     const types = schema.type.filter((t) => t !== 'null');
@@ -158,7 +162,10 @@ export function defaultValues(fields: readonly FormField[]): FormValues {
 }
 
 /** Inverse of valuesToArgs, used when switching from the JSON editor back to the form. */
-export function argsToValues(fields: readonly FormField[], args: Record<string, unknown>): FormValues {
+export function argsToValues(
+  fields: readonly FormField[],
+  args: Record<string, unknown>,
+): FormValues {
   const values: FormValues = {};
   for (const f of fields) {
     const v = args[f.name];

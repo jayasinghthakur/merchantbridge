@@ -53,10 +53,10 @@ describe('OAuth start', () => {
     expect(res.headers.location).toBe(`${WEB}/connect/error?reason=invalid_invite`);
   });
 
-  it('redirects to invalid_invite when connect is not configured', async () => {
+  it('redirects to connect_disabled when connect is not configured', async () => {
     const { app } = await setup({});
     const res = await start(app);
-    expect(res.headers.location).toBe(`${WEB}/connect/error?reason=invalid_invite`);
+    expect(res.headers.location).toBe(`${WEB}/connect/error?reason=connect_disabled`);
   });
 
   it('an unsupported dc redirects to unsupported_dc', async () => {

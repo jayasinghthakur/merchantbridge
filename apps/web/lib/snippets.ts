@@ -76,3 +76,9 @@ export function messagesApiCurl(mcpUrl: string, model: string, key = KEY_PLACEHO
     "tools": [{"type": "mcp_toolset", "mcp_server_name": "merchantbridge"}]
   }'`;
 }
+
+/** POST /api/connection/disconnect: revokes the Zoho token and the key itself. `mcpUrl` is <api>/mcp. */
+export function disconnectCurl(mcpUrl: string): string {
+  const base = mcpUrl.replace(/\/mcp$/, '');
+  return `curl -X POST ${base}/api/connection/disconnect \\\n  -H "Authorization: Bearer ${KEY_PLACEHOLDER}"`;
+}

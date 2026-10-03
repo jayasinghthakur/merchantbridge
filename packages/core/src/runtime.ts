@@ -100,7 +100,11 @@ export function createToolRuntime<C>(deps: ToolRuntimeDeps<C>): ToolRuntime {
       };
     });
 
-  async function callTool(name: string, rawArgs: unknown, opts: CallOptions): Promise<ToolCallResult> {
+  async function callTool(
+    name: string,
+    rawArgs: unknown,
+    opts: CallOptions,
+  ): Promise<ToolCallResult> {
     const tool = tools.get(name);
     if (!tool) throw new UnknownToolError(name);
 
@@ -114,9 +118,13 @@ export function createToolRuntime<C>(deps: ToolRuntimeDeps<C>): ToolRuntime {
     try {
       const parsedArgs = tool.input.safeParse(rawArgs ?? {});
       if (!parsedArgs.success) {
-        throw new ConnectorError('INVALID_INPUT', `Invalid arguments: ${zodIssuesToMessage(parsedArgs.error)}`, {
-          hint: 'Check the tool input schema; ids and cursors must be passed exactly as returned by other tools.',
-        });
+        throw new ConnectorError(
+          'INVALID_INPUT',
+          `Invalid arguments: ${zodIssuesToMessage(parsedArgs.error)}`,
+          {
+            hint: 'Check the tool input schema; ids and cursors must be passed exactly as returned by other tools.',
+          },
+        );
       }
 
       const tenant = await deps.resolve(opts, note);
@@ -138,10 +146,14 @@ export function createToolRuntime<C>(deps: ToolRuntimeDeps<C>): ToolRuntime {
           { tool: name, request_id: opts.requestId, issues: zodIssuesToMessage(data.error) },
           'tool output failed its schema',
         );
-        throw new ConnectorError('UPSTREAM_ERROR', 'The upstream system returned data in an unexpected shape.', {
-          retryable: false,
-          hint: 'This is a connector bug; try a different query or report it.',
-        });
+        throw new ConnectorError(
+          'UPSTREAM_ERROR',
+          'The upstream system returned data in an unexpected shape.',
+          {
+            retryable: false,
+            hint: 'This is a connector bug; try a different query or report it.',
+          },
+        );
       }
 
       const envelope: Envelope<unknown> = {
@@ -158,9 +170,13 @@ export function createToolRuntime<C>(deps: ToolRuntimeDeps<C>): ToolRuntime {
       };
 
       if (estimateTokens(envelope) > maxTokens) {
-        throw new ConnectorError('INVALID_INPUT', 'The result is too large to return in one call.', {
-          hint: 'Use a smaller limit, narrower filters, or a get_* tool for a single record.',
-        });
+        throw new ConnectorError(
+          'INVALID_INPUT',
+          'The result is too large to return in one call.',
+          {
+            hint: 'Use a smaller limit, narrower filters, or a get_* tool for a single record.',
+          },
+        );
       }
       structuredContent = envelope;
     } catch (e) {
@@ -168,12 +184,18 @@ export function createToolRuntime<C>(deps: ToolRuntimeDeps<C>): ToolRuntime {
       let ce: ConnectorError;
       if (isConnectorError(e)) ce = e;
       else if (isUpstreamError(e)) {
-        ce = new ConnectorError('UPSTREAM_ERROR', 'The upstream system is temporarily unavailable.', {
-          retryable: true,
-        });
+        ce = new ConnectorError(
+          'UPSTREAM_ERROR',
+          'The upstream system is temporarily unavailable.',
+          {
+            retryable: true,
+          },
+        );
       } else {
         deps.log.error({ tool: name, request_id: opts.requestId, err: e }, 'unexpected tool error');
-        ce = new ConnectorError('UPSTREAM_ERROR', 'Unexpected connector error.', { retryable: true });
+        ce = new ConnectorError('UPSTREAM_ERROR', 'Unexpected connector error.', {
+          retryable: true,
+        });
       }
       errorCode = ce.code;
       structuredContent = ce.toBody();

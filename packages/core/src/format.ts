@@ -10,7 +10,10 @@ export interface Money {
   currency: string;
 }
 
-export function toMoney(amount: number | string | null | undefined, currency: string): Money | null {
+export function toMoney(
+  amount: number | string | null | undefined,
+  currency: string,
+): Money | null {
   if (amount === null || amount === undefined || amount === '') return null;
   const n = typeof amount === 'number' ? amount : Number(amount);
   if (!Number.isFinite(n)) return null;

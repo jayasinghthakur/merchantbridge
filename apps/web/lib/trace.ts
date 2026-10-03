@@ -76,7 +76,14 @@ export function applyEvent(run: RunState, ev: TraceEvent, now: number): RunState
         ...run,
         items: [
           ...run.items,
-          { kind: 'tool', callId: ev.call_id, tool: ev.tool, args: ev.args, result: null, resultAt: null },
+          {
+            kind: 'tool',
+            callId: ev.call_id,
+            tool: ev.tool,
+            args: ev.args,
+            result: null,
+            resultAt: null,
+          },
         ],
       };
     case 'tool_result': {
@@ -90,7 +97,14 @@ export function applyEvent(run: RunState, ev: TraceEvent, now: number): RunState
       });
       if (!matched) {
         // Result without a preceding call (e.g. a trimmed replay): still show it.
-        items.push({ kind: 'tool', callId: ev.call_id, tool: ev.tool, args: {}, result: ev, resultAt: now });
+        items.push({
+          kind: 'tool',
+          callId: ev.call_id,
+          tool: ev.tool,
+          args: {},
+          result: ev,
+          resultAt: now,
+        });
       }
       return { ...run, items };
     }

@@ -101,12 +101,9 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
     const q = (request.query ?? {}) as Record<string, unknown>;
     const invite = typeof q.invite === 'string' ? q.invite : undefined;
     const signer = ctx.auth?.stateSigner ?? null;
-    if (
-      !config.connectEnabled ||
-      !ctx.auth ||
-      !signer ||
-      !verifyInviteCode(invite, config.env.MB_CONNECT_INVITE_CODE)
-    ) {
+    // Not configured is reported as such (the invite code cannot fix it); only a wrong code is invalid_invite.
+    if (!config.connectEnabled || !ctx.auth || !signer) return fail(reply, 'connect_disabled');
+    if (!verifyInviteCode(invite, config.env.MB_CONNECT_INVITE_CODE)) {
       return fail(reply, 'invalid_invite');
     }
     const dc = q.dc;
@@ -133,7 +130,7 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
     const query = (request.query ?? {}) as Record<string, unknown>;
     const auth = ctx.auth;
     const signer = auth?.stateSigner ?? null;
-    if (!config.connectEnabled || !auth || !signer) return fail(reply, 'invalid_invite');
+    if (!config.connectEnabled || !auth || !signer) return fail(reply, 'connect_disabled');
 
     // Zoho's deny redirect (`?error=access_denied`) is reported as such, whatever the cookie says.
     if (Object.hasOwn(query, 'error')) {

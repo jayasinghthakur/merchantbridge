@@ -20,7 +20,7 @@ export function createLiveUpstream() {
   const calls: UpstreamCall[] = [];
   const accounts = new URL(ZOHO_DATA_CENTERS.in.accountsServer).host;
   const api = new URL(ZOHO_DATA_CENTERS.in.apiDomain).host;
-  const state = { refreshFails: false, exchangeFails: false };
+  const state = { refreshFails: false, exchangeFails: false, revokeFails: false };
 
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -56,6 +56,12 @@ export function createLiveUpstream() {
         });
       }
       return json(400, { error: 'unsupported_grant_type' });
+    }
+    if (url.host === accounts && url.pathname === '/oauth/v2/revoke/token') {
+      calls.push({ host: url.host, path: url.pathname });
+      return state.revokeFails
+        ? json(503, { error: 'unavailable' })
+        : json(200, { status: 'success' });
     }
     if (url.host === api) {
       calls.push({ host: url.host, path: url.pathname });

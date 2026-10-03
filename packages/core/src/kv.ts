@@ -26,11 +26,37 @@ interface Entry {
   expiresAt: number | null;
 }
 
+/** Writes between sweeps of expired keys (amortized O(1) per write). */
+const SWEEP_EVERY_WRITES = 1000;
+
 export class MemoryKv implements Kv {
   private readonly strings = new Map<string, Entry>();
   private readonly zsets = new Map<string, Map<string, number>>();
+  private writes = 0;
 
   constructor(private readonly clock: Clock = systemClock) {}
+
+  /** Number of stored keys (strings + sorted sets, until the next sweep); for tests and dev diagnostics. */
+  get size(): number {
+    return this.strings.size + this.zsets.size;
+  }
+
+  /**
+   * Expired keys are otherwise purged only when read again, so write-once keys (rate-limit windows) would pile up
+   * forever in a long-running dev server. Every SWEEP_EVERY_WRITES writes, drop expired strings and empty zsets.
+   */
+  private afterWrite(): void {
+    this.writes += 1;
+    if (this.writes % SWEEP_EVERY_WRITES !== 0) return;
+    this.sweep();
+  }
+
+  sweep(): void {
+    const now = this.clock.now();
+    for (const [k, e] of this.strings)
+      if (e.expiresAt !== null && e.expiresAt <= now) this.strings.delete(k);
+    for (const [k, z] of this.zsets) if (z.size === 0) this.zsets.delete(k);
+  }
 
   private live(key: string): Entry | undefined {
     const e = this.strings.get(key);
@@ -49,6 +75,7 @@ export class MemoryKv implements Kv {
     if (opts.nx && this.live(key)) return Promise.resolve(false);
     const expiresAt = opts.ttlMs === undefined ? null : this.clock.now() + opts.ttlMs;
     this.strings.set(key, { value, expiresAt });
+    this.afterWrite();
     return Promise.resolve(true);
   }
 
@@ -61,12 +88,9 @@ export class MemoryKv implements Kv {
   incr(key: string, ttlMs?: number): Promise<number> {
     const e = this.live(key);
     const next = (e ? Number(e.value) : 0) + 1;
-    const expiresAt = e
-      ? e.expiresAt
-      : ttlMs === undefined
-        ? null
-        : this.clock.now() + ttlMs;
+    const expiresAt = e ? e.expiresAt : ttlMs === undefined ? null : this.clock.now() + ttlMs;
     this.strings.set(key, { value: String(next), expiresAt });
+    this.afterWrite();
     return Promise.resolve(next);
   }
 
@@ -84,6 +108,7 @@ export class MemoryKv implements Kv {
       this.zsets.set(key, z);
     }
     z.set(member, score);
+    this.afterWrite();
     return Promise.resolve();
   }
 

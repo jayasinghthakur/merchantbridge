@@ -12,7 +12,8 @@ export const FAULTS: readonly FaultInfo[] = [
   {
     id: 'rate_limit_44',
     label: 'Zoho 429 (code 44)',
-    description: 'Org-wide per-minute block: the governor opens a 60\u00a0s circuit and returns RATE_LIMITED.',
+    description:
+      'Org-wide per-minute block: the governor opens a 60\u00a0s circuit and returns RATE_LIMITED.',
     primary: true,
   },
   {

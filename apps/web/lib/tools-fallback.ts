@@ -10,27 +10,46 @@ export interface StaticTool {
 export const STATIC_TOOLS: readonly StaticTool[] = [
   {
     name: 'zoho_check_stock',
-    summary: 'Stock per location, reorder level and price for several known items at once: up to 25 ids or 5 SKUs.',
+    summary:
+      'Stock per location, reorder level and price for several known items at once: up to 25 ids or 5 SKUs.',
   },
   {
     name: 'zoho_find_by_payment_reference',
-    summary: 'A Razorpay pay_ / order_ / rfnd_ id or UPI UTR to the payment, the invoices it paid and the order shipped.',
+    summary:
+      'A Razorpay pay_ / order_ / rfnd_ id or UPI UTR to the payment, the invoices it paid and the order shipped.',
   },
   {
     name: 'zoho_get_connection_status',
-    summary: 'Organization, data center, plan, granted scopes, remaining daily budget and circuit state.',
+    summary:
+      'Organization, data center, plan, granted scopes, remaining daily budget and circuit state.',
   },
-  { name: 'zoho_get_invoice', summary: 'One invoice: balance, due date, line items and the linked sales order.' },
-  { name: 'zoho_get_item', summary: 'One item by id or exact SKU: price, stock per location, reorder level.' },
+  {
+    name: 'zoho_get_invoice',
+    summary: 'One invoice: balance, due date, line items and the linked sales order.',
+  },
+  {
+    name: 'zoho_get_item',
+    summary: 'One item by id or exact SKU: price, stock per location, reorder level.',
+  },
   {
     name: 'zoho_get_sales_order',
     summary: 'One sales order with line items, packages, tracking and invoices embedded.',
   },
-  { name: 'zoho_list_invoices', summary: 'Invoices filtered by status, customer, due date or reference number.' },
+  {
+    name: 'zoho_list_invoices',
+    summary: 'Invoices filtered by status, customer, due date or reference number.',
+  },
   {
     name: 'zoho_list_sales_orders',
-    summary: 'Sales orders, newest first, filtered by customer, status or date within the most recent orders.',
+    summary:
+      'Sales orders, newest first, filtered by customer, status or date within the most recent orders.',
   },
-  { name: 'zoho_search_customers', summary: 'Customers by name, company, email or phone (contact details masked).' },
-  { name: 'zoho_search_items', summary: 'Items by text, SKU or name, including low-stock and per-location filters.' },
+  {
+    name: 'zoho_search_customers',
+    summary: 'Customers by name, company, email or phone (contact details masked).',
+  },
+  {
+    name: 'zoho_search_items',
+    summary: 'Items by text, SKU or name, including low-stock and per-location filters.',
+  },
 ];

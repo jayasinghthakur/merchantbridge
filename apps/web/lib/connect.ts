@@ -62,6 +62,10 @@ export function agentSdkConfig(key: string, mcpUrl: string = LIVE_MCP_URL): stri
 }
 
 const MESSAGES: Record<ConnectErrorReason, { title: string; body: string }> = {
+  connect_disabled: {
+    title: 'Connecting real organizations is closed here',
+    body: 'This deployment has no Zoho client configured. Use the public demo, or self-host with your own Zoho client (see /docs).',
+  },
   invalid_invite: {
     title: 'That invite code is not valid',
     body: 'Connecting a real organization is invite-only during this preview. Check the code, or use the public demo.',
@@ -96,7 +100,10 @@ const MESSAGES: Record<ConnectErrorReason, { title: string; body: string }> = {
   },
 };
 
-export function connectErrorMessage(reason: string | null | undefined): { title: string; body: string } {
+export function connectErrorMessage(reason: string | null | undefined): {
+  title: string;
+  body: string;
+} {
   if (reason && Object.hasOwn(MESSAGES, reason)) return MESSAGES[reason as ConnectErrorReason];
   return MESSAGES.internal;
 }

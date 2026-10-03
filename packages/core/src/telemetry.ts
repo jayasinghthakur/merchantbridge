@@ -24,16 +24,35 @@ export interface UsageEvent {
 
 const SAFE_TOKEN = /^[A-Za-z0-9_\-:.]{1,64}$/;
 
-/** Keeps numbers, booleans and id-like strings (ids, SKUs, pay_ refs); masks anything that could be free text/PII. */
+/** An argument name `maskArgs` copies verbatim: snake_case, like every declared tool input property. */
+export const SAFE_ARG_KEY = /^[a-z][a-z0-9_]{0,39}$/;
+/** Most entries a masked args object has, the `OTHER_ARG_KEYS` count included. */
+export const MAX_ARG_KEYS = 20;
+/** Holds the number of argument names that were not copied (unsafe, or past `MAX_ARG_KEYS`). */
+export const OTHER_ARG_KEYS = '<other_keys>';
+
+function maskValue(v: unknown): unknown {
+  if (typeof v === 'number' || typeof v === 'boolean' || v === null) return v;
+  if (typeof v === 'string') return SAFE_TOKEN.test(v) ? v : `<text:${v.length}>`;
+  if (Array.isArray(v)) return `<array:${v.length}>`;
+  return '<object>';
+}
+
+/**
+ * Keeps numbers, booleans and id-like strings (ids, SKUs, pay_ refs); masks anything that could be free text/PII.
+ * Argument names are caller-chosen too (`{"jane@example.com": 1}`), so a name is copied only when it matches
+ * `SAFE_ARG_KEY`; every other name is dropped and counted under `OTHER_ARG_KEYS`. The result never has more than
+ * `MAX_ARG_KEYS` entries: when some names are dropped, one entry is reserved for their count.
+ */
 export function maskArgs(args: unknown): Record<string, unknown> {
   if (typeof args !== 'object' || args === null) return {};
+  const entries = Object.entries(args as Record<string, unknown>);
+  const safe = entries.filter(([k]) => SAFE_ARG_KEY.test(k));
+  const overflow = safe.length < entries.length || safe.length > MAX_ARG_KEYS;
+  const kept = overflow ? safe.slice(0, MAX_ARG_KEYS - 1) : safe;
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
-    if (typeof v === 'number' || typeof v === 'boolean' || v === null) out[k] = v;
-    else if (typeof v === 'string') out[k] = SAFE_TOKEN.test(v) ? v : `<text:${v.length}>`;
-    else if (Array.isArray(v)) out[k] = `<array:${v.length}>`;
-    else out[k] = '<object>';
-  }
+  for (const [k, v] of kept) out[k] = maskValue(v);
+  if (overflow) out[OTHER_ARG_KEYS] = entries.length - kept.length;
   return out;
 }
 
@@ -81,7 +100,8 @@ export type TraceEvent =
     }
   | {
       type: 'error';
-      code: 'PLAYGROUND_DISABLED' | 'RATE_LIMITED' | 'BUDGET_EXHAUSTED' | 'BAD_REQUEST' | 'INTERNAL';
+      code:
+        'PLAYGROUND_DISABLED' | 'RATE_LIMITED' | 'BUDGET_EXHAUSTED' | 'BAD_REQUEST' | 'INTERNAL';
       message: string;
       retry_after_s?: number;
     };

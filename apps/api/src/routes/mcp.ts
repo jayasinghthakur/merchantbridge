@@ -50,6 +50,60 @@ export async function authenticateApiKey(
   return { tenantId: record.tenantId, keyId: record.id };
 }
 
+export function sendUnauthorized(reply: FastifyReply): FastifyReply {
+  return reply.code(401).header('www-authenticate', 'Bearer realm="merchantbridge"').send({
+    error: 'A valid MerchantBridge API key is required (Authorization: Bearer mb_live_...).',
+  });
+}
+
+export type ApiKeyGuard = (
+  request: FastifyRequest,
+  reply: FastifyReply,
+) => Promise<{ tenantId: string; keyId: string } | null>;
+
+/**
+ * The bearer-key check for every route that takes an `mb_live_` key (/mcp, disconnect). Malformed headers are
+ * rejected without any I/O. Well-formed keys cost a DB lookup, so repeated misses from one IP are capped before the
+ * lookup (keys are 190-bit random: this is about load, not guessing); the failure bucket is shared by all such
+ * routes. Trusted egress ranges are exempt: every tenant's Messages API / Claude.ai connector traffic shares those
+ * few IPs, so one bad key there must not lock all of them out. On failure the guard sends the 401/429 itself and
+ * resolves null.
+ */
+export function createApiKeyGuard(ctx: AppContext): ApiKeyGuard {
+  const isTrustedEgress = createEgressMatcher(ctx.config.env.MB_TRUSTED_EGRESS_CIDRS);
+  return async (request, reply) => {
+    if (bearerApiKey(request.headers.authorization) === null) {
+      sendUnauthorized(reply);
+      return null;
+    }
+    const failKey = isTrustedEgress(clientIp(request))
+      ? null
+      : `mcp:authfail:${clientIpKey(request)}`;
+    if (failKey !== null) {
+      const failures = await peekWindow(
+        ctx.kv,
+        ctx.clock,
+        failKey,
+        AUTH_FAILURES_PER_IP_PER_MIN,
+        60_000,
+      );
+      if (!failures.allowed) {
+        sendRateLimited(reply, failures.retryAfterS, 'Too many invalid API keys; slow down.');
+        return null;
+      }
+    }
+    const auth = await authenticateApiKey(ctx, request.headers.authorization);
+    if (!auth) {
+      if (failKey !== null) {
+        await hitWindow(ctx.kv, ctx.clock, failKey, AUTH_FAILURES_PER_IP_PER_MIN, 60_000);
+      }
+      sendUnauthorized(reply);
+      return null;
+    }
+    return auth;
+  };
+}
+
 export function registerMcpRoutes(
   app: FastifyInstance,
   deps: { ctx: AppContext; demo: McpEndpoint; live: McpEndpoint },
@@ -83,46 +137,14 @@ export function registerMcpRoutes(
     },
   });
 
-  const unauthorized = (reply: FastifyReply): FastifyReply =>
-    reply.code(401).header('www-authenticate', 'Bearer realm="merchantbridge"').send({
-      error: 'A valid MerchantBridge API key is required (Authorization: Bearer mb_live_...).',
-    });
+  const requireApiKey = createApiKeyGuard(ctx);
 
   app.route({
     method: ['GET', 'POST', 'DELETE'],
     url: API_ROUTES.mcp,
     handler: async (request, reply) => {
-      // Malformed headers are rejected without any I/O. Well-formed keys cost a DB lookup, so repeated misses from
-      // one IP are capped before the lookup (keys are 190-bit random: this is about load, not guessing). Trusted
-      // egress ranges are exempt: every tenant's Messages API / Claude.ai connector traffic shares those few IPs,
-      // so one bad key there must not lock all of them out.
-      if (bearerApiKey(request.headers.authorization) === null) return unauthorized(reply);
-      const failKey = isTrustedEgress(clientIp(request))
-        ? null
-        : `mcp:authfail:${clientIpKey(request)}`;
-      if (failKey !== null) {
-        const failures = await peekWindow(
-          ctx.kv,
-          ctx.clock,
-          failKey,
-          AUTH_FAILURES_PER_IP_PER_MIN,
-          60_000,
-        );
-        if (!failures.allowed) {
-          return sendRateLimited(
-            reply,
-            failures.retryAfterS,
-            'Too many invalid API keys; slow down.',
-          );
-        }
-      }
-      const auth = await authenticateApiKey(ctx, request.headers.authorization);
-      if (!auth) {
-        if (failKey !== null) {
-          await hitWindow(ctx.kv, ctx.clock, failKey, AUTH_FAILURES_PER_IP_PER_MIN, 60_000);
-        }
-        return unauthorized(reply);
-      }
+      const auth = await requireApiKey(request, reply);
+      if (!auth) return reply;
       const lim = await hitWindow(
         ctx.kv,
         ctx.clock,

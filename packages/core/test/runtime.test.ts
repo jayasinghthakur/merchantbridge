@@ -51,7 +51,12 @@ const boom = defineTool({
 function setup() {
   const events: UsageEvent[] = [];
   const runtime = createToolRuntime<FakeClient>({
-    connector: defineConnector({ id: 'test', name: 'Test', scopes: ['S.READ'], tools: [getThing, boom] }),
+    connector: defineConnector({
+      id: 'test',
+      name: 'Test',
+      scopes: ['S.READ'],
+      tools: [getThing, boom],
+    }),
     resolve: () =>
       Promise.resolve({
         client: { items: { a1: { name: 'Alpha', secret: 'do-not-leak' } } },
@@ -95,7 +100,9 @@ describe('ToolRuntime', () => {
     const { runtime, events } = setup();
     const res = await runtime.callTool('test_get_thing', { id: 5 }, opts);
     expect(res.isError).toBe(true);
-    expect(res.structuredContent).toMatchObject({ error: { code: 'INVALID_INPUT', retryable: false } });
+    expect(res.structuredContent).toMatchObject({
+      error: { code: 'INVALID_INPUT', retryable: false },
+    });
     expect(events).toHaveLength(1);
   });
 

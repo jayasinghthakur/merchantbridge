@@ -74,7 +74,11 @@ export interface ToolHandlerResult<T> {
   cached?: boolean;
 }
 
-export interface ToolDefinition<C, I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType> {
+export interface ToolDefinition<
+  C,
+  I extends z.ZodType = z.ZodType,
+  O extends z.ZodType = z.ZodType,
+> {
   /** `zoho_<verb>_<noun>`; must match /^[a-z][a-z0-9_]{2,63}$/ */
   name: string;
   title: string;

@@ -119,7 +119,11 @@ function translateFetchError(e: unknown, timedOut: boolean, callerSignal?: Abort
   return new ApiError('network', 'Could not reach the MerchantBridge API.');
 }
 
-async function requestJson<T>(path: string, init: RequestInit, opts: RequestOptions = {}): Promise<T> {
+async function requestJson<T>(
+  path: string,
+  init: RequestInit,
+  opts: RequestOptions = {},
+): Promise<T> {
   const t = withTimeout(opts.signal, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
     const res = await fetch(apiUrl(path), {
@@ -260,7 +264,8 @@ const TRACE_ERROR_CODES: readonly TraceErrorCode[] = [
 ];
 
 function toTraceErrorCode(code: string | null, status: number): TraceErrorCode {
-  if (code && (TRACE_ERROR_CODES as readonly string[]).includes(code)) return code as TraceErrorCode;
+  if (code && (TRACE_ERROR_CODES as readonly string[]).includes(code))
+    return code as TraceErrorCode;
   if (status === 429) return 'RATE_LIMITED';
   if (status === 400 || status === 403 || status === 422) return 'BAD_REQUEST';
   return 'INTERNAL';

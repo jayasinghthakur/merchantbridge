@@ -19,6 +19,7 @@ import { pathOnly } from './infra/logger';
 import type { McpEndpoint } from './mcp';
 import { createMcpEndpoint } from './mcp';
 import { registerPlaygroundRoute } from './playground/route';
+import { registerConnectionRoutes } from './routes/connection';
 import { registerExplorerRoute } from './routes/explorer';
 import { BODY_LIMIT_BYTES, registerMcpRoutes } from './routes/mcp';
 import { registerOAuthRoutes } from './routes/oauth';
@@ -239,6 +240,7 @@ export async function buildApp(
   registerPlaygroundRoute(app, { ctx, demoHandler: parts.demo.handler });
   registerMcpRoutes(app, { ctx, demo: parts.demo, live: parts.live });
   registerOAuthRoutes(app, ctx);
+  registerConnectionRoutes(app, ctx);
 
   app.addHook('onClose', async () => {
     await Promise.allSettled([parts.demo.close(), parts.live.close()]);

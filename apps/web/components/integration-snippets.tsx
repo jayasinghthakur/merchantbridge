@@ -9,6 +9,7 @@ import {
   agentSdkTs,
   claudeCodeDemo,
   claudeCodeLive,
+  disconnectCurl,
   KEY_PLACEHOLDER,
   messagesApiCurl,
 } from '../lib/snippets';
@@ -37,15 +38,28 @@ export function IntegrationSnippets() {
     <div className="space-y-10">
       <Sub title="Claude Code">
         <p className="text-sm text-ink-muted">Public demo server (synthetic data, no key):</p>
-        <CodeBlock code={claudeCodeDemo(demoUrl)} label="Terminal" wrap testId="docs-claude-code-demo" />
+        <CodeBlock
+          code={claudeCodeDemo(demoUrl)}
+          label="Terminal"
+          wrap
+          testId="docs-claude-code-demo"
+        />
         <p className="text-sm text-ink-muted">
-          Your own Zoho organization, with the key shown once after <Link className="font-semibold text-brand-ink underline" href="/connect">connecting</Link>:
+          Your own Zoho organization, with the key shown once after{' '}
+          <Link className="font-semibold text-brand-ink underline" href="/connect">
+            connecting
+          </Link>
+          :
         </p>
         <CodeBlock code={claudeCodeLive(liveUrl)} label="Terminal" wrap />
       </Sub>
 
       <Sub title="Claude Agent SDK">
-        <div role="tablist" aria-label="Language" className="inline-flex rounded-sm border border-line p-0.5">
+        <div
+          role="tablist"
+          aria-label="Language"
+          className="inline-flex rounded-sm border border-line p-0.5"
+        >
           {(
             [
               ['ts', 'TypeScript'],
@@ -72,31 +86,40 @@ export function IntegrationSnippets() {
           <CodeBlock code={agentSdkPython(liveUrl)} label="agent.py" />
         )}
         <p className="text-sm text-ink-muted">
-          Tools appear as <InlineCode>mcp__merchantbridge__zoho_*</InlineCode>. For the demo server, use{' '}
-          <InlineCode>{demoUrl}</InlineCode> and drop the header.
+          Tools appear as <InlineCode>mcp__merchantbridge__zoho_*</InlineCode>. For the demo server,
+          use <InlineCode>{demoUrl}</InlineCode> and drop the header.
         </p>
       </Sub>
 
       <Sub title="Claude Messages API (MCP connector)">
         <CodeBlock code={messagesApiCurl(liveUrl, model)} label="Shell" />
         <p className="text-sm text-ink-muted">
-          Requires the <InlineCode>mcp-client-2025-11-20</InlineCode> beta header and both halves: the{' '}
-          <InlineCode>mcp_servers</InlineCode> entry and an <InlineCode>mcp_toolset</InlineCode> that names it. The
-          server must be reachable from the public internet, so this does not work against localhost. Replace{' '}
-          <InlineCode>{KEY_PLACEHOLDER}</InlineCode> with your key.
+          Requires the <InlineCode>mcp-client-2025-11-20</InlineCode> beta header and both halves:
+          the <InlineCode>mcp_servers</InlineCode> entry and an <InlineCode>mcp_toolset</InlineCode>{' '}
+          that names it. The server must be reachable from the public internet, so this does not
+          work against localhost. Replace <InlineCode>{KEY_PLACEHOLDER}</InlineCode> with your key.
         </p>
       </Sub>
 
       <Sub title="Claude.ai custom connector">
         <ol className="list-decimal space-y-1.5 pl-5 text-sm text-ink-muted marker:text-ink-subtle">
           <li>
-            Open <strong className="text-ink">Customize → Connectors → Add custom connector</strong>.
+            Open <strong className="text-ink">Customize → Connectors → Add custom connector</strong>
+            .
           </li>
           <li>Name it MerchantBridge demo and paste the URL below.</li>
           <li>Leave the OAuth fields empty: the demo server needs no sign-in.</li>
           <li>Enable it in a chat and ask about CHAI-250.</li>
         </ol>
         <CodeBlock code={demoUrl} label="Remote MCP server URL" wrap testId="docs-connector-url" />
+      </Sub>
+
+      <Sub title="Disconnect">
+        <p className="text-sm text-ink-muted">
+          Revokes the Zoho refresh token at Zoho, marks the connection revoked and disables the key
+          that made the call. Local revocation happens even if Zoho is unreachable.
+        </p>
+        <CodeBlock code={disconnectCurl(liveUrl)} label="Shell" wrap testId="docs-disconnect" />
       </Sub>
     </div>
   );

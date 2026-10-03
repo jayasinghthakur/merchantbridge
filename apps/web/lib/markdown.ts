@@ -5,9 +5,7 @@
  */
 
 export type Inline =
-  | { kind: 'text'; text: string }
-  | { kind: 'code'; text: string }
-  | { kind: 'bold'; text: string };
+  { kind: 'text'; text: string } | { kind: 'code'; text: string } | { kind: 'bold'; text: string };
 
 export type Block =
   | { kind: 'p'; lines: Inline[][] }
