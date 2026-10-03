@@ -1,9 +1,30 @@
 # Runbook
 
-Symptom -> diagnosis -> action for the failures we expect. Placeholders: `API` (API origin, the Hugging Face Space's
-app URL), `SPACE` (the Space id `<owner>/<space>`). Hosting is the $0 stack of [ADR-0009](adr/0009-free-tier-stack.md)
-([deploy.md](deploy.md)); Space variables and secrets are changed by the human in the Space settings.
-Never paste tokens, refresh tokens or customer PII into tickets or chats; usage events are already masked.
+Symptom -> diagnosis -> action for the failures we expect. Placeholders: `API` (API origin,
+https://merchantbridge-api.vercel.app), `WEB` (https://merchantbridge-web.vercel.app). Hosting is the $0 stack of
+[ADR-0009](adr/0009-free-tier-stack.md): both apps on Vercel Hobby (the API is one Vercel Function), Neon, Upstash,
+Groq ([deploy.md](deploy.md)). Never paste tokens, refresh tokens or customer PII into tickets or chats; usage events
+are already masked.
+
+**Vercel basics** (from the repo root, CLI pinned; `export PATH="$HOME/.local/bin:$PATH"` first):
+
+```sh
+pnpm dlx vercel@62.2.0 logs --project merchantbridge-api --environment production -x   # API logs
+bash scripts/deploy-vercel.sh api                                                      # redeploy the API
+(cd apps/api && printf %s "$VALUE" | pnpm dlx vercel@62.2.0 env add NAME production --sensitive --force)
+```
+
+- **Env-var changes need a redeploy.** A deployment keeps the values it was created with: after `vercel env add`
+  (drop `--sensitive` for plain values; full table in [deploy.md](deploy.md) §3), run
+  `bash scripts/deploy-vercel.sh api`. Changing `API` also needs `bash scripts/deploy-vercel.sh web`
+  (`NEXT_PUBLIC_API_URL` is inlined at build time).
+- **Never deploy with `vercel deploy` from inside the repo:** Vercel blocks it ("the commit author doesn't have
+  permission to create deployments for this project"); the script deploys from a git-free folder.
+- **Log lines worth searching:** `merchantbridge api ready` (one per function instance: storage, kv, connect,
+  playground provider and model), `merchantbridge api failed to start`, `playground run failed`,
+  `LLM provider rejected the key`.
+- **Rollback:** the Vercel dashboard (Deployments → Instant Rollback), or check out an older commit and run the
+  script.
 
 Useful queries (Postgres, `usage_events`, one row per tool call):
 
@@ -98,22 +119,32 @@ token` when Zoho was unreachable, in which case that token lingers until Zoho ev
   AI budget for now". Or the request itself gets HTTP 429 "Today's playground budget is used up" (MerchantBridge's own
   daily cap). `/tools` and `/mcp/demo` keep working: they need no model.
 - **Diagnosis:** the API logs `playground run failed` with `provider`, `code` and `status`. On the $0 path the provider
-  is Groq's free tier (ADR-0009), which limits requests and tokens per minute (about 30 requests/min) and per day (for
-  `llama-3.3-70b-versatile` about 1,000 requests and 100K tokens, approximate). A 429 that clears within a minute is
+  is Groq's free tier with `openai/gpt-oss-120b` (ADR-0009), which limits requests and tokens per minute and per day
+  for each model (current numbers and usage: console.groq.com/settings/limits). A 429 that clears within a minute is
   the per-minute limit (`RATE_LIMITED`); a 429 whose body mentions a daily (TPD/RPD) limit or a spent quota maps to
-  `BUDGET_EXHAUSTED` and lasts until Groq's daily window resets. Each question resends the tool schemas (about 3.4K
-  tokens) on every model turn, so the daily allowance covers only a handful of questions. The HTTP 429 instead is
-  `MB_PLAYGROUND_DAILY_CAP` (default 300 questions per UTC day). Current usage and exact limits per model: the Groq
-  console.
-- **Action:** per-minute limits clear by themselves. For the daily quota: wait for the reset, or point the Space at
-  another free OpenAI-compatible endpoint (Space variables `MB_LLM_BASE_URL`, `MB_PLAYGROUND_MODEL`, secret
-  `MB_LLM_API_KEY`; e.g. Gemini's OpenAI-compatible endpoint or an OpenRouter free model), or a smaller Groq model with
-  a larger daily allowance (check the console), then restart the Space. Lower `MB_PLAYGROUND_DAILY_CAP` so visitors see
-  MerchantBridge's own "budget used up" message before Groq's. There is **no replay fallback** yet: the page points
-  visitors to the Tools explorer, and reviewers can still use `claude mcp add … /mcp/demo` with their own Claude.
-  Emergency stop: Space variable `MB_PLAYGROUND_ENABLED=false` (human only); the page then shows "Live agent paused".
+  `BUDGET_EXHAUSTED` and lasts until Groq's daily window resets. Each question resends the tool schemas and the
+  conversation on every model turn (the one-tool COD card used about 7K input tokens on 2026-10-04; multi-step cards
+  use more). The HTTP 429 instead is `MB_PLAYGROUND_DAILY_CAP` (40 questions per UTC day on prod; code default 300).
+- **Action:** per-minute limits clear by themselves. For the daily quota: wait for the reset, or switch to another
+  free model or OpenAI-compatible endpoint (`MB_PLAYGROUND_MODEL`, e.g. `openai/gpt-oss-20b`; or `MB_LLM_BASE_URL`
+  plus `MB_LLM_API_KEY` for Gemini's OpenAI-compatible endpoint or an OpenRouter free model), then redeploy the API.
+  Lower `MB_PLAYGROUND_DAILY_CAP` so visitors see MerchantBridge's own "budget used up" message before Groq's. There
+  is **no replay fallback** yet: the page points visitors to the Tools explorer, and reviewers can still use
+  `claude mcp add … /mcp/demo` with their own Claude. Emergency stop: `MB_PLAYGROUND_ENABLED=false` and a redeploy
+  (human only); the page then shows "Live agent paused".
 - **Paid provider instead** (`MB_LLM_PROVIDER=anthropic`): `BUDGET_EXHAUSTED` means the Anthropic workspace hit its
   spend cap; raise the cap in the Anthropic console or switch back to the free provider.
+
+## LLM model not found (HTTP 404)
+
+- **Symptoms:** every playground question ends with the generic `INTERNAL` error ("The agent hit an unexpected
+  error"); the API logs `playground run failed` with `status: 404` and a message containing `model_not_found`.
+  `pnpm evals` skips the model with "returned HTTP 404 on an earlier case (unknown model id?)".
+- **Diagnosis:** the provider does not serve `MB_PLAYGROUND_MODEL` to this key. This happened on 2026-10-04: Groq made
+  Llama 3.3 70B (`llama-3.3-70b-versatile`) Enterprise-only, so free keys get 404. Check `API/api/status` (`model`)
+  and the model list in the Groq console.
+- **Action:** set `MB_PLAYGROUND_MODEL` to a model the key can use (default `openai/gpt-oss-120b`; fallback
+  `openai/gpt-oss-20b`) and redeploy the API; for evals pass `--models <id>`. Run one playground card to confirm.
 
 ## LLM key rejected or rotated (Groq)
 
@@ -122,9 +153,10 @@ token` when Zoho was unreachable, in which case that token lingers until Zoho ev
   `pnpm evals` stops with "rejected the API key".
 - **Diagnosis:** the Groq key was revoked, mistyped, or belongs to another account; or `MB_LLM_BASE_URL` points at a
   provider the key is not for.
-- **Action (rotation, also after a suspected leak):** create a new key in the Groq console; replace the Space secret
-  `MB_LLM_API_KEY` (and your local shell's copy for evals); restart the Space; run one playground card; then delete the
-  old key in the console. Never paste the key into issues, chats or variables (only the Space **secret**).
+- **Action (rotation, also after a suspected leak):** create a new key in the Groq console; replace
+  `MB_LLM_API_KEY` as a Sensitive variable (`read -rs VALUE`, then the `vercel env add … --sensitive --force` line
+  above, then `unset VALUE`) and your local shell's copy for evals; redeploy the API; run one playground card; then
+  delete the old key in the console. Never paste the key into issues, chats or plain variables.
 
 ## Upstash command budget
 
@@ -142,33 +174,35 @@ token` when Zoho was unreachable, in which case that token lingers until Zoho ev
 - **Symptoms:** first request after idle takes seconds; `/health/ready` slow or 503 with `checks.store: false`; first
   usage-event insert fails then succeeds.
 - **Diagnosis:** Neon free tier suspends compute when idle.
-- **Action:** usage events are batched (every 2 s or 100 events) and never fail tool calls (write errors are logged,
-  not surfaced). The keep-warm workflow pings `/health/live`, which does not touch Neon, so Neon still sleeps; during
-  demo hours an uptime check on `/health/ready` keeps compute warm at the cost of Upstash commands (see above); raise
-  the DB connect timeout if needed.
+- **Action:** usage events are buffered and never fail tool calls (write errors are logged, not surfaced); on Vercel
+  each invocation flushes them before it ends. Retry the first request: a cold function instance and a sleeping Neon
+  compute together make it slow, the next ones are fast. During demo hours an uptime check on `/health/ready` keeps
+  Neon warm at the cost of Upstash commands (see above); `/health/live` touches neither. Raise the DB connect timeout
+  if first requests fail rather than wait.
 
-## API down, or the Space asleep
+## API down or failing to start (Vercel)
 
-- **Symptoms:** the site loads but the playground, explorer and `/mcp/demo` fail or hang; MCP clients time out on the
-  first call; `keep-warm.yml` fails ("did not answer {"ok":true}").
-- **Diagnosis:** open the Space page (`https://huggingface.co/spaces/SPACE`) and read its status and **Logs**.
-  - **Sleeping / paused:** a free Space sleeps after a period without traffic (about 48 h). The keep-warm workflow
-    prevents that only while GitHub runs it: GitHub disables scheduled workflows in a public repository after 60 days
-    without repository activity (Actions tab shows it disabled).
-  - **Building / restarting:** a deploy just happened (every push that touches the API rebuilds the image and restarts
-    the container) or Hugging Face restarted it; open SSE streams are cut.
-  - **Build error:** the build log shows it; the CI `docker` job builds the same Dockerfile, and the deploy workflow
-    builds before pushing, so this is usually a Hugging Face-side problem: rebuild from the Space settings.
-  - **Runtime error / crash loop:** the container log shows env validation ("Invalid environment configuration",
-    "Production requires: DATABASE_URL, REDIS_URL", or "MB_DEV_FAKE_ZOHO=true is a local development mode and is
-    refused": unset that variable, it must never be set in production). 403s on every non-health route mean a host
-    missing from `MB_PUBLIC_API_URL` / `MB_ALLOWED_HOSTS` (the Host allow-list applies everywhere except `/health/*`).
-- **Action:** a sleeping Space wakes on the next request: open `API/health/live` or run **Keep warm** from the Actions
-  tab (it retries for ~10 minutes); re-enable the keep-warm workflow if GitHub disabled it. For config errors fix the
-  Space variable or secret and restart the Space; for code, fix on `main` (the deploy workflow redeploys). If the Space
-  status stays "Starting" while the log shows `merchantbridge api listening`, check `PORT` = `app_port` = 8787 (see
-  [deploy.md](deploy.md#5-deploy-to-the-space-github-actions)). On the optional Fly host the equivalent checks are
-  `fly status`, `fly logs` and `fly machine start`.
+- **Symptoms:** the site loads but the playground, explorer and `/mcp/demo` fail; or every API route answers
+  `503 {"error":{"code":"UNAVAILABLE","message":"Service is starting or misconfigured."}}`; or `/health/ready`
+  answers 503.
+- **Diagnosis:** read the API logs (command above) and `curl -sS API/health/ready`.
+  - **`merchantbridge api failed to start: …`** (every request 503): configuration. The message names the variable,
+    never its value: `Production requires: DATABASE_URL, REDIS_URL`, `Invalid environment configuration` (for example
+    `REDIS_URL: must be a redis:// or rediss:// URL`, or `is not a parseable URL`), or `MB_DEV_FAKE_ZOHO=true is a
+local development mode and is refused` (that variable must never be set in production). The start is retried on
+    the next request.
+  - **`Invalid URL` from `REDIS_URL`:** a mis-pasted value used to fail this way: Upstash's whole
+    `redis-cli --tls -u redis://…` command instead of the URL. Such a command is now tolerated (the URL is extracted
+    and upgraded to `rediss://`); Upstash's REST URL is still rejected. Use the
+    `rediss://default:<password>@<host>.upstash.io:6379` URL.
+  - **`/health/ready` 503 with `checks.kv: false` or `checks.store: false`:** Upstash or Neon is unreachable or out of
+    free quota (see the Upstash and Neon sections).
+  - **403 on every route except `/health/*` and `/`:** the request Host is not allowed. Only `MB_PUBLIC_API_URL`'s
+    host (plus `MB_ALLOWED_HOSTS`) passes; use the production alias, not a deployment-specific `…vercel.app` URL.
+  - **Works locally, wrong on prod right after an env change:** the change was not redeployed.
+- **Action:** fix the variable (`vercel env add … --force`, see above) and run `bash scripts/deploy-vercel.sh api`;
+  for code, fix on `main` and redeploy; to undo a bad deploy, roll back (above). On the optional Fly host the
+  equivalent checks are `fly status`, `fly logs` and `fly machine start`.
 
 ## HTTP 400 from `/mcp/demo` or `/api/explorer/call`
 
@@ -206,12 +240,12 @@ token` when Zoho was unreachable, in which case that token lingers until Zoho ev
 ## Per-IP limits not applied (spoofed client IP)
 
 - **Symptoms:** one host exceeds 60 `/mcp/demo` requests per minute without 429s; probe (a) in
-  [deploy.md](deploy.md#8-verify-production) §8 shows only `200`s on two runs. The opposite failure, probe (b): a
+  [deploy.md](deploy.md#6-verify-production) §6 shows only `200`s on two runs. The opposite failure, probe (b): a
   visitor on another network gets 429 right after someone else used up "their" bucket.
-- **Diagnosis:** on the Hugging Face Space the caller IP is the right-most `X-Forwarded-For` entry
+- **Diagnosis:** on Vercel the caller IP is the right-most `X-Forwarded-For` entry
   (`MB_CLIENT_IP_SOURCE=xff-last`, UNVERIFIED until the probes pass). Only `200`s means a client-sent value ends up
   right-most (spoofable); a shared 429 means the right-most entry is an internal proxy address shared by everyone.
   (On the optional Fly host the source is `Fly-Client-IP` and the same probe uses that header.)
-- **Action:** spoofable: set the Space variable `MB_CLIENT_IP_SOURCE=socket` and restart (all traffic then shares one
+- **Action:** spoofable: set `MB_CLIENT_IP_SOURCE=socket` and redeploy the API (all traffic then shares one
   bucket: strict but safe). Shared bucket: safe as is, but reviewers share 60 requests per minute; record it and
   revisit with the platform's documented headers. Either way, record the finding in `docs/STATUS.md`.

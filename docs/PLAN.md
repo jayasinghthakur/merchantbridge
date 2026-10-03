@@ -31,36 +31,36 @@ Why this framing wins:
 ### The 3-minute reviewer journey (no login)
 
 1. Open the live site. The hero shows the positioning line and a single **Try it** button.
-2. In **/playground**, click a scenario card. A live LLM agent (Llama 3.3 70B on Groq's free tier by default,
+2. In **/playground**, click a scenario card. A live LLM agent (`openai/gpt-oss-120b` on Groq's free tier by default,
    ADR-0009) calls the real MCP server. A trace pane shows each tool, its args, latency, cache hit, governor decision,
    budget left and error code.
 3. Flip the **"Zoho 429 (code 44)"** toggle and see the backoff, then a structured `RATE_LIMITED` result with
    `retry_after_s`. Flip **"expired token"** to see refresh, then one retry.
 4. Click the refusal card ("cancel this order") and see zero tool calls and a polite refusal.
-5. Copy `claude mcp add --transport http mb-demo https://<api>/mcp/demo` into their own Claude. The same URL works as
-   a Claude.ai custom connector with "No sign-in".
+5. Copy `claude mcp add --transport http mb-demo https://merchantbridge-api.vercel.app/mcp/demo` into their own
+   Claude. The same URL works as a Claude.ai custom connector with "No sign-in".
 6. The **/docs** page shows CAN / CANNOT, the tool table and a 2-minute video of the real Zoho OAuth.
 
 ---
 
 ## 2. Decisions (both plans reconciled)
 
-| Topic                   | Decision                                                                                                                                                                                                                                                                                               | Why                                                                                                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Language                | **TypeScript end to end** (Node 22, strict) + one CI-run `examples/python/` Agent SDK client                                                                                                                                                                                                           | Kit, MCP TS SDK v2, Anthropic TS `mcpTools()`+`toolRunner`, Next.js → one language, one test runner, one CI. JD says "Python and one of Java/Go/TS".         |
-| MCP SDK                 | **v2 split packages, exact-pinned**: `@modelcontextprotocol/server`, `client`, `fastify`, `node` (2.x), `zod/v4`. ADR records v1 (`@modelcontextprotocol/sdk` 1.32) as fallback                                                                                                                        | Kit's `@modelcontextprotocol/sdk` is the v1 maintenance line. v2 implements spec 2026-07-28 (stateless).                                                     |
-| Apps                    | **`apps/api`** (Fastify: `/mcp`, `/mcp/demo`, `/oauth/zoho/*`, `/api/playground` SSE, `/api/explorer`, `/health/*`) + **`apps/web`** (Next.js + Tailwind)                                                                                                                                              | Stateless MCP mounts inside one service. Replaces kit's gateway / mcp-server / dashboard split.                                                              |
-| Packages                | `core` (defineConnector, defineTool, ToolRuntime, envelope, errors) · `zoho-inventory` (client, mappers, tools, FakeZoho) · `governor` · `auth` · `db`                                                                                                                                                 | Framework-free, so a Vercel-route fallback is about an hour of work.                                                                                         |
-| Hosting                 | **$0, no card (ADR-0009):** **Hugging Face Docker Space**, CPU basic (api; `deploy/hf-space/`, `deploy-hf-space.yml`, keep-warm ping every 6 h) + **Vercel Hobby** (web) + **Neon** free (Postgres) + **Upstash** free (Redis). Fly.io (`fly.toml`, always-on) is kept as an optional paid alternative | Owner requirement: everything free. Trade-offs: cold start after ~48 h idle, restart on deploy, Hobby is non-commercial. Was Fly.io, about $2–5/month.       |
-| LLM (playground, evals) | **OpenAI-compatible provider, default Groq free tier `llama-3.3-70b-versatile`** (`MB_LLM_PROVIDER`/`MB_LLM_BASE_URL`/`MB_LLM_API_KEY`); Anthropic (`claude-haiku-4-5`, evals `claude-sonnet-5-5`) optional and paid (ADR-0009)                                                                        | $0 requirement; provider-agnostic engine; only demo data reaches the model. Was Anthropic with a $15 spend cap.                                              |
-| Redis                   | **Keep** (Upstash via ioredis, plain INCR/EXPIRE, SET NX PX, ZSET leases; no Lua) behind a `Kv` interface with an in-memory implementation for tests                                                                                                                                                   | Several agents share one org's 100/min limit; token refresh must be single-flight (Zoho allows 10 token requests per client per 10 min); per-IP demo limits. |
-| Demo                    | **FakeZoho = a fake upstream, not a fake app**: a fetch transport speaking Zoho's wire format (code≠0 on HTTP 200, `page_context`, 401, 429 codes 44/45/1070, 5xx, malformed JSON)                                                                                                                     | The real client, mappers, governor, ToolRuntime and MCP server all run in the public demo. One contract suite proves both backends.                          |
-| Auth legs               | (1) Merchant→Zoho: real OAuth 2.0 authorization code. (2) Agent→MerchantBridge: hashed per-tenant bearer key `mb_live_…`, shown once. Zoho tokens never pass through (MCP spec forbids it). OAuth 2.1 on the MCP leg is Tier 3.                                                                        | Works with Agent SDK headers, `claude mcp add --header`, and the Messages API `authorization_token`.                                                         |
-| Errors                  | Tool errors are **`isError: true` results** carrying `{code,message,retryable,retry_after_s?,hint}`. JSON-RPC errors only for unknown tool or malformed request.                                                                                                                                       | MCP spec; lets the model self-correct.                                                                                                                       |
-| Output                  | `outputSchema` + `structuredContent` + a text copy on every tool; **≤10K tokens** per result (enforced by test)                                                                                                                                                                                        | Claude Code and the Agent SDK warn at 10K and swap results above 25K for a file reference.                                                                   |
-| Observability           | Tier 1: Pino + `request_id` + `usage_events` (audit). Tier 2: `prom-client /metrics`, `/activity` page. **No OpenTelemetry.**                                                                                                                                                                          | Real signals only, no fake metrics.                                                                                                                          |
-| Cut from kit            | Turborepo, Docker Compose, billing/GST page, 30-day fake usage seed, per-minute alerts, refresh scheduler (lazy refresh instead), Recharts dashboard pages, `zoho_search`, conflict checks (Tier 3)                                                                                                    | Scope; "no fake metrics".                                                                                                                                    |
-| Cut from pasted plan    | Python/FastAPI/SQLAlchemy/Vite SPA, parallel REST resource API (`/api/v1/sales-orders`…), OTel, the 47-section master prompt                                                                                                                                                                           | One surface (MCP) to secure and test; short milestone prompts work better.                                                                                   |
+| Topic                   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Why                                                                                                                                                                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Language                | **TypeScript end to end** (Node 22, strict) + one CI-run `examples/python/` Agent SDK client                                                                                                                                                                                                                                                                                                                                                                                            | Kit, MCP TS SDK v2, Anthropic TS `mcpTools()`+`toolRunner`, Next.js → one language, one test runner, one CI. JD says "Python and one of Java/Go/TS".                                                                                     |
+| MCP SDK                 | **v2 split packages, exact-pinned**: `@modelcontextprotocol/server`, `client`, `fastify`, `node` (2.x), `zod/v4`. ADR records v1 (`@modelcontextprotocol/sdk` 1.32) as fallback                                                                                                                                                                                                                                                                                                         | Kit's `@modelcontextprotocol/sdk` is the v1 maintenance line. v2 implements spec 2026-07-28 (stateless).                                                                                                                                 |
+| Apps                    | **`apps/api`** (Fastify: `/mcp`, `/mcp/demo`, `/oauth/zoho/*`, `/api/playground` SSE, `/api/explorer`, `/health/*`) + **`apps/web`** (Next.js + Tailwind)                                                                                                                                                                                                                                                                                                                               | Stateless MCP mounts inside one service. Replaces kit's gateway / mcp-server / dashboard split.                                                                                                                                          |
+| Packages                | `core` (defineConnector, defineTool, ToolRuntime, envelope, errors) · `zoho-inventory` (client, mappers, tools, FakeZoho) · `governor` · `auth` · `db`                                                                                                                                                                                                                                                                                                                                  | Framework-free, so a Vercel-route fallback is about an hour of work.                                                                                                                                                                     |
+| Hosting                 | **$0, no card (ADR-0009, amended 2026-10-04):** **Vercel Hobby** for both apps: `apps/api` as one Vercel Function (`src/vercel.ts`, bundled by `scripts/build-vercel.mjs`; live at https://merchantbridge-api.vercel.app) and `apps/web` (https://merchantbridge-web.vercel.app), deployed by `scripts/deploy-vercel.sh` + **Neon** free (Postgres) + **Upstash** free (Redis). The Docker image stays for self-hosting; Fly.io (`fly.toml`, always-on) is an optional paid alternative | Owner requirement: everything free. Hugging Face Docker Spaces (the first choice) now need PRO (HTTP 402). Trade-offs: serverless cold starts, 300 s per request, manual deploys, Hobby is non-commercial. Was Fly.io, about $2–5/month. |
+| LLM (playground, evals) | **OpenAI-compatible provider, default Groq free tier `openai/gpt-oss-120b`** (`MB_LLM_PROVIDER`/`MB_LLM_BASE_URL`/`MB_LLM_API_KEY`); Anthropic (`claude-haiku-4-5`, evals `claude-sonnet-5-5`) optional and paid (ADR-0009)                                                                                                                                                                                                                                                             | $0 requirement; provider-agnostic engine; only demo data reaches the model. Was Anthropic with a $15 spend cap; then `llama-3.3-70b-versatile`, which Groq made Enterprise-only.                                                         |
+| Redis                   | **Keep** (Upstash via ioredis, plain INCR/EXPIRE, SET NX PX, ZSET leases; no Lua) behind a `Kv` interface with an in-memory implementation for tests                                                                                                                                                                                                                                                                                                                                    | Several agents share one org's 100/min limit; token refresh must be single-flight (Zoho allows 10 token requests per client per 10 min); per-IP demo limits.                                                                             |
+| Demo                    | **FakeZoho = a fake upstream, not a fake app**: a fetch transport speaking Zoho's wire format (code≠0 on HTTP 200, `page_context`, 401, 429 codes 44/45/1070, 5xx, malformed JSON)                                                                                                                                                                                                                                                                                                      | The real client, mappers, governor, ToolRuntime and MCP server all run in the public demo. One contract suite proves both backends.                                                                                                      |
+| Auth legs               | (1) Merchant→Zoho: real OAuth 2.0 authorization code. (2) Agent→MerchantBridge: hashed per-tenant bearer key `mb_live_…`, shown once. Zoho tokens never pass through (MCP spec forbids it). OAuth 2.1 on the MCP leg is Tier 3.                                                                                                                                                                                                                                                         | Works with Agent SDK headers, `claude mcp add --header`, and the Messages API `authorization_token`.                                                                                                                                     |
+| Errors                  | Tool errors are **`isError: true` results** carrying `{code,message,retryable,retry_after_s?,hint}`. JSON-RPC errors only for unknown tool or malformed request.                                                                                                                                                                                                                                                                                                                        | MCP spec; lets the model self-correct.                                                                                                                                                                                                   |
+| Output                  | `outputSchema` + `structuredContent` + a text copy on every tool; **≤10K tokens** per result (enforced by test)                                                                                                                                                                                                                                                                                                                                                                         | Claude Code and the Agent SDK warn at 10K and swap results above 25K for a file reference.                                                                                                                                               |
+| Observability           | Tier 1: Pino + `request_id` + `usage_events` (audit). Tier 2: `prom-client /metrics`, `/activity` page. **No OpenTelemetry.**                                                                                                                                                                                                                                                                                                                                                           | Real signals only, no fake metrics.                                                                                                                                                                                                      |
+| Cut from kit            | Turborepo, Docker Compose, billing/GST page, 30-day fake usage seed, per-minute alerts, refresh scheduler (lazy refresh instead), Recharts dashboard pages, `zoho_search`, conflict checks (Tier 3)                                                                                                                                                                                                                                                                                     | Scope; "no fake metrics".                                                                                                                                                                                                                |
+| Cut from pasted plan    | Python/FastAPI/SQLAlchemy/Vite SPA, parallel REST resource API (`/api/v1/sales-orders`…), OTel, the 47-section master prompt                                                                                                                                                                                                                                                                                                                                                            | One surface (MCP) to secure and test; short milestone prompts work better.                                                                                                                                                               |
 
 ---
 
@@ -73,7 +73,7 @@ Why this framing wins:
  Claude.ai / Claude Code / Agent SDK / Messages API mcp_toolset
           │ POST /mcp (Bearer mb_live_)   │ POST /mcp/demo (public, demo tenant only)
           ▼                               ▼
- ┌─────────────────── apps/api (Hugging Face Space, Fastify) ─────────────────┐
+ ┌─────────────────── apps/api (Vercel Function, Fastify) ────────────────────┐
  │ /oauth/zoho/*   /api/playground (LLM tool loop ⇄ in-process MCP Client)    │
  │ MCP server (createMcpHandler, stateless) ─► ToolRuntime (Zod, tenant ctx,  │
  │   envelope, isError, allow-lists, untrusted_text, PII mask, 10K cap,       │
@@ -165,14 +165,14 @@ note contains a **prompt injection**, which must stay inside `untrusted_text`.
 **Playground engine:** `/api/playground` on the API host streams SSE. The pipeline is an in-process MCP `Client`
 (`StreamableHTTPClientTransport({fetch: handler.fetch})`) → an agent loop (max 6 iterations, `tool_choice: auto`).
 Since ADR-0009 the default loop is OpenAI-compatible Chat Completions against Groq's free tier
-(`llama-3.3-70b-versatile`); the original Anthropic loop (`mcpTools()` → `client.beta.messages.toolRunner`,
+(`openai/gpt-oss-120b`); the original Anthropic loop (`mcpTools()` → `client.beta.messages.toolRunner`,
 `claude-haiku-4-5`, evals also on `claude-sonnet-5-5`) remains as the optional paid provider. The playground
 therefore exercises exactly what external hosts see.
 
 **Cost and abuse protection:**
 
-- **$0 model budget** (ADR-0009): Groq's free tier, so its rate limits (about 30 requests/min; about 100K tokens per
-  day for the 70B model, approximate) replace the original Anthropic **workspace with a $15 spend cap**.
+- **$0 model budget** (ADR-0009): Groq's free tier, so its per-minute and per-day limits for the model
+  (console.groq.com/settings/limits) replace the original Anthropic **workspace with a $15 spend cap**.
 - Cloudflare Turnstile on the first message.
 - 10 questions per 10 min per IP and 300 per day globally.
 - Input capped at 500 chars, `max_tokens` 1024, prompt caching on.
@@ -185,9 +185,10 @@ therefore exercises exactly what external hosts see.
 **SSE hygiene:** send `X-Accel-Buffering: no` and `Cache-Control: no-cache, no-transform`; keep compression off that
 route; send a `:` heartbeat every 15 s; set a CORS allowlist for the Vercel production and preview domains.
 
-**Deploy:** CD via GitHub Actions (`deploy-hf-space.yml` assembles and force-pushes the Hugging Face Space with
-`HF_TOKEN`; `deploy-api.yml` with `FLY_API_TOKEN` is the optional Fly path; migrations run by hand) plus the Vercel
-Git integration. Mount with
+**Deploy (as built, ADR-0009):** `bash scripts/deploy-vercel.sh [api|web|all]` builds both apps locally and deploys
+them prebuilt to Vercel from git-free temp folders (Vercel blocks in-repo CLI deploys whose commit author is not on
+the Vercel team, so Git-integration auto-deploys are an optional later step); migrations run by hand;
+`deploy-api.yml` with `FLY_API_TOKEN` is the optional paid Fly path. Mount with
 `createMcpFastifyApp({host:'0.0.0.0', allowedHosts:[api host]})`; keep `legacy: 'stateless'`, the default, so
 Claude.ai and 2025-era clients work. Add an uptime monitor. Watch Upstash's free 500K commands per month: expose the
 command count in `/health/ready`.
@@ -213,9 +214,9 @@ anything needing prod, real Zoho or a real model is still open). Details: `docs/
 - `scripts/smoke.ts`; hello-world deploys of both apps.
 - _Done when:_ CI is green; `https://<api>/health/ready` reports db and redis ok; the web URL returns 200; the human
   has run `! pnpm smoke`; ADR-001 records the probe results.
-- _Build status:_ code done (workspace, CI incl. gitleaks and a Docker build job, CD workflow, `scripts/smoke.ts`,
-  vendored OpenAPI, `apps/web/CLAUDE.md`). Open: GitHub remote, first CI run, deploys, smoke run, ADR-0001 results,
-  `packages/zoho-inventory/CLAUDE.md`.
+- _Build status:_ code done (workspace, CI incl. gitleaks and a Docker build job, `scripts/smoke.ts`, vendored
+  OpenAPI, nested `CLAUDE.md` files); GitHub repo pushed; **deployed 2026-10-04** on Vercel: `/health/ready` reports
+  postgres and redis ok, the web URL returns 200. Open: recording the first CI run, the smoke run, ADR-0001 results.
 
 **M1 Contract + FakeZoho + MCP (1 day)**
 
@@ -226,7 +227,8 @@ anything needing prod, real Zoho or a real model is still open). Details: `docs/
   session with `mb-demo` answers "Is CHAI-250 in stock in Bengaluru and at what price?"; the contract suite is green;
   bad args return `isError`, never a throw.
 - _Build status:_ code done: 9 Tier-1 tools plus `zoho_check_stock`, `/mcp`, `/mcp/demo` (per-session isolation),
-  `pnpm gen:tools` + staleness test, contract suite green; Inspector `tools/list` verified against local. Open: prod.
+  `pnpm gen:tools` + staleness test, contract suite green; `tools/list` (10, stable order) verified against prod
+  `/mcp/demo` on 2026-10-04. Open: the fresh Claude Code session check against prod.
 
 **M2 Zoho OAuth + token vault (½–1 day)**
 
@@ -241,7 +243,8 @@ anything needing prod, real Zoho or a real model is still open). Details: `docs/
   tokens never appear in captured logs; the human connects the trial org on prod; `claude mcp add … /mcp --header
 "Authorization: Bearer mb_live_…"` returns real stock.
 - _Build status:_ code done, including the browser-bound state cookie and `POST /api/connection/disconnect`; each
-  connect creates a new tenant and key (ADR-0008). Open: connecting the trial org on prod.
+  connect creates a new tenant and key (ADR-0008). Open: the Zoho org and PROD client, then connecting it on prod
+  (prod `/connect` answers `connect_disabled` until `ZOHO_CLIENT_ID`/`_SECRET` are set).
 
 **M3 Governor (½ day)**
 
@@ -253,7 +256,8 @@ anything needing prod, real Zoho or a real model is still open). Details: `docs/
 - Cache: items 60 s, org 300 s, tenant in the key.
 - _Done when:_ fake-timer tests pass for 44, 45, 1070, 5xx, timeout and concurrency; two agents running in parallel
   stay at or under 80/min.
-- _Build status:_ code done (63 governor tests). Open: the governor is keyed per tenant, not per org (ADR-0008).
+- _Build status:_ code done (63 governor tests); keyed per Zoho organization (`zoho:<dc>:<org>`) since 2026-10-03
+  (ADR-0008 amended).
 
 **M4 Site + playground (1 day)**
 
@@ -261,7 +265,9 @@ anything needing prod, real Zoho or a real model is still open). Details: `docs/
 - _Done when:_ Playwright against prod passes for: card → at least one tool step → answer; toggle 44 → a
   `RATE_LIMITED` step is visible; refusal card → 0 tool calls; kill switch → replay.
 - _Build status:_ code done except the replay fallback (not built): pages, 5 cards, all 6 fault toggles, cost guards,
-  mocked and real-stack Playwright suites (local). Open: replay, Playwright against prod.
+  mocked and real-stack Playwright suites; the real-stack suite passed 35/35 against prod on 2026-10-04, and one
+  card (COD) answered correctly on prod by hand. Open: replay, the card/toggle/refusal Playwright checks with a live
+  model on prod.
 
 **M5 Docs, evals, ship (½ day)**
 
@@ -271,9 +277,10 @@ anything needing prod, real Zoho or a real model is still open). Details: `docs/
   code 45, reconnect, LLM budget exhausted).
 - 6 ADRs, the Python example run in CI, and the 2-minute OAuth video.
 - _Done when:_ Sonnet scores at least 90% (Haiku published as-is); since ADR-0009 the gated model is
-  `llama-3.3-70b-versatile` on Groq's free tier; a cold incognito run of the README path works; tag `v0.1.0`.
-- _Build status:_ 17 eval cases + harness + offline CI suite; README and docs; ADRs 0001-0008. Open: real eval runs
-  and report, Python example, OAuth video, `v0.1.0` tag.
+  `openai/gpt-oss-120b` on Groq's free tier; a cold incognito run of the README path works; tag `v0.1.0`.
+- _Build status:_ 17 eval cases + harness + offline CI suite; README with live links and docs; ADRs 0001-0009; the
+  Python example runs in CI and was verified against prod on 2026-10-04. Open: real eval runs and report, OAuth
+  video, `v0.1.0` tag.
 
 **48h compression**, applied in this order:
 
@@ -366,10 +373,11 @@ tested 429 handling, the contract suite, `mcp-tools.json`, the CAN/CANNOT doc, t
   - **PROD:** prod callback; enable the IN, US and EU DCs.
   - **DEV:** localhost callback; keep a DEV refresh token for smoke runs.
   - Two clients mean local re-consents can't evict the prod token.
-- Accounts (all free, no card; ADR-0009): GitHub, Hugging Face, Vercel Hobby, Neon, Upstash, Groq, Cloudflare
+- Accounts (all free, no card; ADR-0009): GitHub, Vercel Hobby, Neon, Upstash, Groq, optionally Cloudflare
   Turnstile. (Originally Fly and an Anthropic workspace with a spend cap; both now optional and paid.)
 - Write `.env` yourself.
-- Set deploy secrets yourself: Space variables and secrets in the Hugging Face UI, `vercel env add`, `gh secret set`.
+- Set deploy secrets yourself: `vercel env add` in the `merchantbridge-api` project, values piped, never echoed
+  (`docs/deploy.md` §3).
 
 **1. Context session (plan mode, Shift+Tab), no code.** Prompt:
 
@@ -434,7 +442,7 @@ ADR-001 and corrects the plan wherever reality differs.
 4. Claude commits **red tests first**, then the implementation, so git history proves the tests came first.
 5. Run `/verify`.
 6. Run `/code-review high` on every PR and `/security-review` on M2–M4. Fix the findings, then run `/simplify`.
-7. Run `/ship`, wait for green CI and the Vercel preview, merge (CD deploys), then run `/verify-prod`.
+7. Run `/ship`, wait for green CI, merge, deploy with `bash scripts/deploy-vercel.sh`, then run `/verify-prod`.
 8. Update `docs/STATUS.md` (done / next / open questions) before closing the session.
 9. If context goes above ≈60%, `/compact` with a focus or split the milestone (M2a OAuth, M2b keys).
 
@@ -501,12 +509,12 @@ Fix **tool descriptions before code**, re-run, and commit the report together wi
 
 ## 10. Top risks
 
-| Risk                                                       | Mitigation                                                                               |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `/salesorders` has no search filters                       | Day-0 smoke; documented fallback chain; bound stated in CAN/CANNOT                       |
-| Zoho trial expires after 14 days (the free plan continues) | Public demo never depends on Zoho; record the video early                                |
-| Local re-consent evicts the prod refresh token             | Separate PROD and DEV clients                                                            |
-| Cold starts or SSE buffering break the demo                | Keep-warm ping every 6 h (free Space, ADR-0009), SSE headers, heartbeat, replay fallback |
-| LLM cost or abuse                                          | $0 free-tier model (ADR-0009), Turnstile, per-IP limits, daily cap, kill switch          |
-| MCP SDK v2 minor-version churn                             | Exact pins; day-0 compatibility probe; v1 fallback ADR                                   |
-| Claude invents Zoho params                                 | Vendored OpenAPI, `zoho-verifier` subagent, UNVERIFIED tags + smoke probes               |
+| Risk                                                       | Mitigation                                                                                |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `/salesorders` has no search filters                       | Day-0 smoke; documented fallback chain; bound stated in CAN/CANNOT                        |
+| Zoho trial expires after 14 days (the free plan continues) | Public demo never depends on Zoho; record the video early                                 |
+| Local re-consent evicts the prod refresh token             | Separate PROD and DEV clients                                                             |
+| Cold starts or SSE buffering break the demo                | Serverless function with streaming on (ADR-0009), SSE headers, heartbeat, replay fallback |
+| LLM cost or abuse                                          | $0 free-tier model (ADR-0009), Turnstile, per-IP limits, daily cap, kill switch           |
+| MCP SDK v2 minor-version churn                             | Exact pins; day-0 compatibility probe; v1 fallback ADR                                    |
+| Claude invents Zoho params                                 | Vendored OpenAPI, `zoho-verifier` subagent, UNVERIFIED tags + smoke probes                |
