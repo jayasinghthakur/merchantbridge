@@ -19,7 +19,12 @@ The probe list and the evidence for each assumption are in `docs/notes/zoho.md` 
    - `/salesorders`: no server-side filters; bounded scan (ADR-0006);
    - per-module "not found" detection: HTTP 404 or a body `code` whose message says "does not exist";
    - payment references: search `reference_number` on customer payments, then invoices (exact);
-   - deep links: `zoho_url: null`;
+   - deep links (amended 2026-10-03): `zoho_url` is returned in the web-app route format
+     `{inventoryWebHost}/app/{organization_id}#/{module}/{id}` (e.g.
+     `https://inventory.zoho.in/app/60034567890#/salesorders/123`; modules in `WEB_ROUTES`,
+     `packages/zoho-inventory/src/client.ts`; pattern in `docs/notes/zoho.md` §6.9), single records only, `null` for
+     lists. This format is **UNVERIFIED** until smoke probe P-21 opens one link per module in a real org; the code and
+     `docs/agent-capabilities.md` say so. If P-21 fails, fix `WEB_ROUTES` or go back to `zoho_url: null`.
    - plan detection: `free` unless `plan_name` maps cleanly.
 3. The human runs `! pnpm smoke` once on day 0 and after any Zoho-facing change, pastes sanitized output (no tokens,
    no customer PII), and Claude fills the table below and amends PLAN.md / notes / code where reality differs.
@@ -64,4 +69,5 @@ Run date: `____` · Org DC: `in` · Client: DEV · Smoke commit: `____`
 
 ## Status
 
-Accepted (assumptions). Results pending the human smoke run.
+Accepted (assumptions). Results pending the human smoke run. Amended 2026-10-03: Decision 2 now returns `zoho_url`
+deep links in the web-app route format (UNVERIFIED, P-21) instead of `null`, matching the code.

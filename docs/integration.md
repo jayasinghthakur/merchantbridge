@@ -27,8 +27,10 @@ Placeholders: `API` = the MerchantBridge API origin (e.g. `https://<app>.fly.dev
 What happened: MerchantBridge created a tenant for this organization, stored an encrypted Zoho refresh token for it
 and minted one key (only its SHA-256 hash is stored). Zoho tokens never leave the server; agents only ever hold the
 `mb_live_` key. **Connect each organization once and share the key across agent hosts:** every connect creates a
-new tenant and key, and two tenants of one organization get separate rate budgets that together can exceed Zoho's
-per-org limit ([ADR-0008](adr/0008-tenant-per-connect-and-disconnect.md)).
+new tenant, key and Zoho refresh token. Tenants of one organization share one rate budget (the governor is keyed by
+organization, `zoho:<dc>:<org>`), so a second connect does not raise your limits; it only adds another refresh token
+toward Zoho's 20-per-user cap and another key to retire ([ADR-0008](adr/0008-tenant-per-connect-and-disconnect.md)).
+If a connect fails after Zoho issued a refresh token, MerchantBridge revokes that token before showing the error.
 
 ## 2. Check it (30 s)
 
@@ -39,7 +41,8 @@ curl -s -X POST API/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"zoho_get_connection_status","arguments":{}}}'
 ```
 
-Expect your organization name, data center, plan, granted scopes and `budget_remaining_today`. Or use the Inspector:
+Expect your organization name, data center, plan, the read scopes requested at connect (`scopes_requested`; Zoho
+does not report grants) and `budget_remaining_today`. Or use the Inspector:
 `npx @modelcontextprotocol/inspector --cli API/mcp --transport http --method tools/list --header "Authorization: Bearer $MB_API_KEY"`
 (the `--header` flag spelling for the Inspector CLI is UNVERIFIED; the curl above is authoritative).
 
@@ -80,7 +83,10 @@ for await (const msg of query({
 ```
 
 Python: `ClaudeAgentOptions(mcp_servers={"merchantbridge": {"type": "http", "url": "API/mcp", "headers": {...}}},
-allowed_tools=["mcp__merchantbridge__*"])`. No runnable Python example ships yet (planned in PLAN M5, not built).
+allowed_tools=["mcp__merchantbridge__*"])` (not run here). To see the raw wire from Python with only the standard
+library, [`examples/python/mcp_demo_client.py`](../examples/python/mcp_demo_client.py) lists the tools and looks up a
+SKU: `MB_MCP_URL=API/mcp MB_API_KEY=mb_live_… python3 examples/python/mcp_demo_client.py` (without `MB_API_KEY` it
+uses `API/mcp/demo`).
 
 **Messages API (MCP connector beta)** — Anthropic calls the endpoint for you:
 
@@ -159,6 +165,14 @@ claude mcp add --transport http mb-demo http://localhost:8787/mcp/demo
 The explorer at `/tools` works without any key. The playground needs `ANTHROPIC_API_KEY` and
 `MB_PLAYGROUND_ENABLED=true` in the environment of `pnpm dev:api` (apps/api loads no `.env` file). Without the Zoho
 variables below, `/oauth/zoho/start` redirects to `/connect/error?reason=connect_disabled`.
+
+**Local live leg against a fake Zoho (2 min):** `pnpm dev:api:fake-live` (`MB_DEV_FAKE_ZOHO=true`) runs steps 1-5 of
+this page locally with no credentials: it seeds a tenant "Local dev merchant" connected to an in-process FakeZoho
+organization, prints its `mb_live_` key with ready-to-paste `/mcp` and disconnect commands, and serves a fake Zoho
+consent page so `/connect` (invite code `local-dev`, data center India) completes and mints a new key. Missing Zoho
+client, vault, state and invite variables get ephemeral dev-only values; Zoho Accounts and the IN Inventory API are
+answered in-process and any other outbound host is refused. It is refused with `NODE_ENV=production` or with
+`DATABASE_URL`/`REDIS_URL` set. Details: [README](../README.md#fake-live-mode-the-authenticated-leg-without-zoho).
 
 **Your own deployment (live Zoho):**
 

@@ -366,7 +366,7 @@ tested 429 handling, the contract suite, `mcp-tools.json`, the CAN/CANNOT doc, t
 
 **1. Context session (plan mode, Shift+Tab), no code.** Prompt:
 
-> "Read CLAUDE.md, README-KIT.md, docs/PLAN.md and docs/prompts/*. Rewrite CLAUDE.md to ≤120 lines applying PLAN §2–4
+> "Read CLAUDE.md, docs/PLAN.md and docs/prompts/*. Rewrite CLAUDE.md to ≤120 lines applying PLAN §2–4
 > and §9. Add nested CLAUDE.md for packages/zoho-inventory and apps/web. Replace the prompts with docs/prompts/M0–M8.md,
 > each ≤40 lines: Goal · Read first · Tests first · Build · Out of scope · Done when (exact commands) · Commit. Write no code."
 

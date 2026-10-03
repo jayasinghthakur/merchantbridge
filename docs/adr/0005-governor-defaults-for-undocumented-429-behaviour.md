@@ -11,8 +11,9 @@ Zoho UI (the account-level code-44 message).
 
 ## Decision
 
-One governor per `zoho:{tenant}:{org}` (or `demo:{session}`) backed by Redis, defaults from `zohoRateProfile()` in
-`packages/core/src/governor.ts`:
+One governor per Zoho organization, `zoho:{dc}:{org}` (shared by every tenant of that org since the ADR-0008
+amendment; originally `zoho:{tenant}:{org}`), or `demo:{session}`, backed by Redis, defaults from
+`zohoRateProfile()` in `packages/core/src/governor.ts`:
 
 | Setting       | Default                                                                   | Reasoning                                                                  |
 | ------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------- |

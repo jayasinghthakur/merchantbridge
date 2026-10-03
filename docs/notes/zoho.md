@@ -308,7 +308,9 @@ line_items, notes`.
 ### 6.9 Deep links (`meta.zoho_url`)
 
 Not documented in the vendored files. Pattern `https://inventory.zoho.{tld}/app/{organization_id}#/{module}/{id}` is
-UNVERIFIED (P-21); until confirmed, emit `zoho_url: null` rather than a guessed link.
+UNVERIFIED (P-21). The code emits it for single records (ADR-0001 Decision 2 as amended; `WEB_ROUTES` in
+`packages/zoho-inventory/src/client.ts`), tagged UNVERIFIED in code and docs; if P-21 fails, fix the routes or emit
+`zoho_url: null`.
 
 ## 7. Errors
 

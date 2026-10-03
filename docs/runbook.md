@@ -15,13 +15,14 @@ from usage_events where ts > date_trunc('day', now()) group by 1 order by 2 desc
 ```
 
 ```sql
--- organizations connected more than once (separate governor budgets, ADR-0008)
+-- organizations connected more than once (extra tenants, keys, refresh tokens; one governor budget)
 select organization_id, count(*) from connections where status = 'active' group by 1 having count(*) > 1;
 ```
 
-Governor keys in Redis (`packages/governor/src/keys.ts`): `gov:zoho:{tenant}:{org}:circuit` (open circuit record),
-`:exhausted` (daily-quota flag), `:day:YYYY-MM-DD` (admitted calls today), `:minute`, `:leases`, `:fails`, `:probe`.
-Demo sessions use `gov:demo:{session}:…`. The governor numbers are fixed in `zohoRateProfile`
+Governor keys in Redis (`packages/governor/src/keys.ts`) are per Zoho organization, shared by every tenant of it:
+`gov:zoho:{dc}:{org}:circuit` (open circuit record), `:exhausted` (daily-quota flag), `:day:YYYY-MM-DD` (admitted
+calls today), `:minute`, `:leases`, `:fails`, `:probe`. Demo sessions use `gov:demo:{session}:…`. Cache keys stay per
+tenant (`zoho:{tenant}:{org}:…`). The governor numbers are fixed in `zohoRateProfile`
 (`packages/core/src/governor.ts`); there is no per-tenant override, so "lower the limit" below means a code change
 and a deploy.
 
@@ -31,13 +32,12 @@ and a deploy.
   merchant may see "your account has been blocked" in the Zoho UI.
 - **Diagnosis:** Zoho allows 100 requests/min per org, shared with the merchant's UI users and every other integration
   (including Zoho's own MCP if they run it). Our governor caps us at 80/min, so a 44 usually means **someone else** is
-  also calling. Check our rate: `zcard gov:zoho:{tenant}:{org}:minute`; if it is well under 80, the excess is
-  external. Block duration is undocumented (ADR-0005 assumes 60 s).
-- **Action:** do nothing for 60 s; the circuit half-opens with one probe. If 44 recurs, run the "connected more than
-  once" query above: two active tenants for one organization each get 80/min, which together exceed Zoho's 100
-  (ADR-0008); have the merchant disconnect the extra key. Otherwise ask which other integrations poll Zoho, and if
-  needed lower `perMinute` in `zohoRateProfile` (code change). Never clear the circuit key by hand during a live
-  block; it extends the block.
+  also calling. Check our rate: `zcard gov:zoho:{dc}:{org}:minute` (all of our tenants of that org together); if it
+  is well under 80, the excess is external. Block duration is undocumented (ADR-0005 assumes 60 s).
+- **Action:** do nothing for 60 s; the circuit half-opens with one probe (it pauses every tenant of that
+  organization, as Zoho's block does). Several tenants of one organization share the 80/min budget, so duplicate
+  connects are not the cause; ask which other integrations poll Zoho, and if needed lower `perMinute` in
+  `zohoRateProfile` (code change). Never clear the circuit key by hand during a live block; it extends the block.
 
 ## Zoho code 45: daily quota exhausted
 
@@ -55,8 +55,8 @@ and a deploy.
 - **Diagnosis:** Zoho allows 5 concurrent calls (free) / 10 (paid, soft). We lease 4 / 8. Persistent 1070s mean
   external concurrency, or our lease count is wrong for the plan (`connections.plan` null maps to free).
 - **Action:** confirm the plan via `zoho_get_connection_status`; check `zcard gov:…:leases`; stale leases expire after
-  30 s. Check for duplicate tenants of the org (query above). If external load is the cause, lower `concurrency`
-  in `zohoRateProfile` (code change).
+  30 s; leases are shared by every tenant of the org. If external load is the cause, lower `concurrency` in
+  `zohoRateProfile` (code change).
 
 ## RECONNECT_REQUIRED (`invalid_code` / `invalid_grant`) and the 20-refresh-token trap
 
@@ -68,6 +68,11 @@ and a deploy.
      production. This is why PROD and DEV use separate Zoho clients.
   2. The merchant revoked access (Zoho Accounts -> Sessions -> Connected Apps) or the Zoho user lost access.
   3. Wrong DC accounts server for refresh (would show `invalid_client` instead).
+
+  Failed connects do not add to the eviction count: when anything fails after the code exchange, the callback revokes
+  the refresh token it was just issued (log `revoked abandoned refresh token`, or `could not revoke abandoned refresh
+token` when Zoho was unreachable, in which case that token lingers until Zoho evicts it).
+
 - **Action:** the merchant reconnects at `WEB/connect`. In v1 that creates a **new tenant and a new key** (ADR-0008):
   the old key keeps answering `RECONNECT_REQUIRED`, so the merchant must put the new key into every agent host and
   then retire the old one with `POST /api/connection/disconnect` (see "Merchant wants to disconnect"). Then check who
@@ -121,11 +126,24 @@ and a deploy.
 
 - **Symptoms:** site loads but playground, explorer and `/mcp/demo` fail; uptime monitor alerts.
 - **Diagnosis:** `fly status -a $APP`, `fly machine list -a $APP`, `fly logs -a $APP`. Look for crash loops on env
-  validation ("Invalid environment configuration", "Production requires: DATABASE_URL, REDIS_URL") and for 403s on
+  validation ("Invalid environment configuration", "Production requires: DATABASE_URL, REDIS_URL", or
+  "MB_DEV_FAKE_ZOHO=true is a local development mode and is refused": unset that variable, it must never be set in
+  production) and for 403s on
   every non-health route (the Host-header allow-list applies everywhere except `/health/*`; a custom domain missing
   from `MB_PUBLIC_API_URL` / `MB_ALLOWED_HOSTS` causes this).
 - **Action:** fix config and redeploy via CI; `fly machine start <id> -a $APP` for a stopped machine; keep
   `min_machines_running = 1`. Add any extra public hostname to `MB_ALLOWED_HOSTS`.
+
+## HTTP 400 from `/mcp/demo` or `/api/explorer/call`
+
+- **Symptoms:** a demo client gets `400 {"error":{"code":"BAD_REQUEST","message":"X-MB-Faults …"}}`, or the explorer
+  answers 400 "Unknown field(s) …".
+- **Diagnosis:** `/mcp/demo` rejects `X-MB-Faults` with an unknown fault name, or sent without a valid client
+  `X-MB-Session` (8-64 chars of `A-Za-z0-9_-`, not starting with `ip-`); faults never apply to the shared per-IP
+  session. An empty `X-MB-Faults` is fine (no faults). `POST /api/explorer/call` takes only `tool`, `args`,
+  `session_id` and `faults`; tool arguments go in `args`, and any other key is a 400.
+- **Action:** fix the client; the message names the problem and the valid values. The response header
+  `X-MB-Applied-Faults` shows which faults a demo request actually ran with.
 
 ## Merchant wants to disconnect
 

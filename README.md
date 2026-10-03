@@ -15,7 +15,119 @@ Razorpay or Zoho.
 | Agent contract (CAN / CANNOT / LIMITS) | [`docs/agent-capabilities.md`](docs/agent-capabilities.md)              |
 | Tool specification (generated)         | [`docs/mcp-tools.json`](docs/mcp-tools.json)                            |
 
-## The 3-minute journey (no login)
+## Verification status
+
+**What has and has not been run.** Everything marked verified ran on 2026-10-03 on a developer machine with **no Zoho
+and no Anthropic credentials**. Nothing is deployed, and CI has never run (there is no GitHub remote yet).
+
+| Status       | What                                                                     | Evidence                                                                                                                                                                                                                                     |
+| ------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Verified     | Unit, contract and integration tests                                     | `pnpm test` (Vitest; FakeZoho, PGlite, in-memory Kv; never real Zoho). Counts in [Testing](#testing).                                                                                                                                        |
+| Verified     | FakeZoho demo: `/mcp/demo`, `/tools` explorer, playground UI states      | MCP `tools/list` / `tools/call` over HTTP (curl, the Python client) plus both browser suites.                                                                                                                                                |
+| Verified     | Real-stack browser suite                                                 | [`playwright.real.config.ts`](apps/web/playwright.real.config.ts): 7 behavioural + 28 visual checks, 35/35 against a local credential-free API and `next start`. Added to CI (`e2e` job) with screenshots as an artifact; not run there yet. |
+| Verified     | Authenticated `/mcp`, OAuth connect and disconnect (against a fake Zoho) | [Fake-live mode](#fake-live-mode-the-authenticated-leg-without-zoho): bearer-key `tools/list` and `tools/call` (`meta.demo: false`), connect through a fake consent page, disconnect `200` then `401` on `/mcp`.                             |
+| Verified     | Python client                                                            | [`examples/python/mcp_demo_client.py`](examples/python/mcp_demo_client.py) (stdlib only) against a local `/mcp/demo`, and with `MB_API_KEY` against fake-live `/mcp` (`demo=False`).                                                         |
+| Not verified | Real Zoho OAuth and Inventory API                                        | Pending the human-run `pnpm smoke` against the Zoho trial org ([ADR-0001](docs/adr/0001-zoho-api-assumptions-and-smoke-results.md) probes) and connecting that org.                                                                          |
+| Not verified | Real Claude model runs (playground answers, evals)                       | Pending `pnpm evals` with `ANTHROPIC_API_KEY` set; the [pass-rate table](#evals) is TODO.                                                                                                                                                    |
+| Not verified | Production deploy, CI, Docker image                                      | Fly, Vercel, Neon, Upstash not set up; the CI jobs (including the Docker build and the `e2e` job) have never run.                                                                                                                            |
+
+## Local quickstart (no credentials)
+
+Needs Node >= 22 and pnpm 12 (`corepack enable` picks `pnpm@12.8.1` from `package.json`).
+
+```sh
+pnpm i
+pnpm dev:api    # API on http://localhost:8787: FakeZoho demo, in-memory stores and Kv, no secrets
+pnpm dev:web    # web on http://localhost:3000, calling the API at http://localhost:8787
+```
+
+Open http://localhost:3000. **/tools** (the explorer) works without any LLM key.
+
+**Ports.** API `:8787`: change it with `PORT` and set `MB_PUBLIC_API_URL` to the matching origin (it feeds the demo
+URL shown on the site and the OAuth redirect). Web `:3000` (pinned by its `dev`/`start` scripts; the API allows CORS
+from `MB_PUBLIC_WEB_URL`, default `http://localhost:3000`). The web finds the API through `NEXT_PUBLIC_API_URL`
+(default `http://localhost:8787`; inlined at build time, so rebuild after changing it).
+
+**Playground.** It needs a model. `apps/api` reads only its process environment (it loads no `.env` file):
+
+```sh
+ANTHROPIC_API_KEY=... MB_PLAYGROUND_ENABLED=true pnpm dev:api
+```
+
+**Use the demo server from Claude Code, or inspect it:**
+
+```sh
+claude mcp add --transport http mb-demo http://localhost:8787/mcp/demo
+npx @modelcontextprotocol/inspector --cli http://localhost:8787/mcp/demo --transport http --method tools/list
+```
+
+### Fake-live mode: the authenticated leg without Zoho
+
+`pnpm dev:api` serves only the public demo. To exercise `/mcp` with a real bearer key, the OAuth connect flow and
+disconnect without any credentials, start the API in fake-live mode instead:
+
+```sh
+pnpm dev:api:fake-live    # = MB_DEV_FAKE_ZOHO=true pnpm --filter @mb/api dev
+```
+
+It seeds a live tenant **"Local dev merchant"** with an active Zoho connection (data center `in`) to an in-process
+FakeZoho organization, mints an `mb_live_` key, and prints one `[fake-live]` block with the key and these commands
+ready to paste:
+
+```sh
+KEY=mb_live_...   # from the [fake-live] block
+curl -sS http://localhost:8787/mcp -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+curl -sS http://localhost:8787/mcp -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"zoho_get_item","arguments":{"sku":"CHAI-250"}}}'
+# -> result.structuredContent.meta.demo is false: this went through the live resolver, token provider and governor
+curl -sS -X POST http://localhost:8787/api/connection/disconnect -H "Authorization: Bearer $KEY"
+# -> {"revoked_locally":true,"revoked_at_zoho":true,"had_connection":true}; the same key now gets HTTP 401 on /mcp
+```
+
+With `pnpm dev:web` running, **/connect** works too: invite code `local-dev`, data center **India**. Instead of Zoho
+Accounts you get a fake consent page served by the API; **Accept** returns to the real `/oauth/zoho/callback` (HMAC
+state and cookie, `accounts-server` allow-list, code exchange, vault, organizations lookup), which mints a new key on
+`/connect/success`. Only the India data center is faked.
+
+What is real and what is fake: all MerchantBridge code runs unchanged; only the network is replaced. Zoho Accounts
+(token, revoke) and the IN Inventory API are answered in-process
+([`apps/api/src/dev/fake-upstream.ts`](apps/api/src/dev/fake-upstream.ts)), and any other outbound host throws
+(the playground's Anthropic client is separate and runs only if you set `ANTHROPIC_API_KEY`).
+Missing `MB_ENCRYPTION_KEY`, `MB_STATE_SECRET`, `ZOHO_CLIENT_ID`/`_SECRET`/`_REDIRECT_URI` and
+`MB_CONNECT_INVITE_CODE` get ephemeral dev-only values (the log lists their names, never the values). The key, the
+secrets and all data reset on every restart, including `tsx watch` restarts. The server refuses to start with
+`MB_DEV_FAKE_ZOHO=true` when `NODE_ENV=production`, or when `DATABASE_URL` or `REDIS_URL` is set.
+
+Connecting a **real** Zoho org locally needs a real Zoho client plus the encryption, state and invite variables
+([`docs/integration.md`](docs/integration.md#self-host)); without them (and without fake-live mode)
+`/oauth/zoho/start` redirects to `/connect/error?reason=connect_disabled`. Production deployment:
+[`docs/deploy.md`](docs/deploy.md).
+
+### Browser suites
+
+```sh
+pnpm --filter @mb/web exec playwright install chromium     # once
+pnpm --filter @mb/web e2e                                  # mocked suite: starts its own next dev on :3107
+
+# Real stack, no mocks: three terminals
+pnpm --filter @mb/api start                                                              # API on :8787
+NEXT_PUBLIC_API_URL=http://localhost:8787 pnpm --filter @mb/web build && pnpm --filter @mb/web start   # web on :3000
+pnpm --filter @mb/web exec playwright test -c playwright.real.config.ts
+```
+
+Screenshots land in `apps/web/e2e/screenshots/` and `apps/web/e2e-real/screenshots/` (gitignored; CI uploads them).
+Against a deployment: `PLAYWRIGHT_BASE_URL=https://<web> pnpm --filter @mb/web exec playwright test -c
+playwright.real.config.ts`.
+
+## Hosted-demo journey (TODO until deployed)
+
+**TODO: the hosted site is not deployed yet** (`LIVE_SITE_URL` and `DEMO_MCP_URL` above are placeholders). Until it
+is, every step works locally at http://localhost:3000 and http://localhost:8787/mcp/demo after the
+[quickstart](#local-quickstart-no-credentials), except step 2 and the agent answers in steps 3-4, which need a
+playground model key.
 
 1. Open the live site and click **Try it in the playground**. Every demo surface carries a **DEMO DATA** badge
    ("Chai & Co (DEMO)", served by FakeZoho, a wire-accurate fake of the Zoho API).
@@ -24,8 +136,9 @@ Razorpay or Zoho.
    its arguments, latency, cache hits, governor decisions, budget left and error code. A correct answer cites
    INV-00005, SO-00007 and Delhivery tracking 1490811234567, delivered.
 3. Flip **Zoho 429 (code 44)** and ask again: the governor opens a 60 s circuit and the tool returns a structured
-   `RATE_LIMITED` result with `retry_after_s`. Flip **Expired token**: one single-flight refresh, then one retry.
-   Four more faults sit under "More faults" (code 45, code 1070, 5xx, malformed body). Faults are per browser session.
+   `RATE_LIMITED` result with `retry_after_s`. Flip **Expired token**: one single-flight refresh, and the trace shows
+   **token refreshed** then **retried after token refresh**. Four more faults sit under "More faults" (code 45, code
+   1070, 5xx, malformed body). Faults are per browser session.
 4. Click **Ask it to change data** ("Cancel sales order SO-00012 and mark its invoice as paid"): zero tool calls and a
    short refusal. No write tool exists.
 5. Open **/tools**: run any tool against the demo with no LLM and see the raw JSON-RPC request and response.
@@ -39,7 +152,7 @@ Razorpay or Zoho.
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | OAuth flow                       | Zoho OAuth 2.0 authorization code, 7 data centres, HMAC single-use `state` bound to a browser cookie, code exchange at an allow-listed `accounts-server`, AES-256-GCM refresh-token vault, single-flight refresh: [`packages/auth/src`](packages/auth/src), [`apps/api/src/routes/oauth.ts`](apps/api/src/routes/oauth.ts), [ADR-0004](docs/adr/0004-two-auth-legs.md). Off switch: [`apps/api/src/routes/connection.ts`](apps/api/src/routes/connection.ts), [ADR-0008](docs/adr/0008-tenant-per-connect-and-disconnect.md). |
 | List / get / search primitives   | 10 read-only tools ([table below](#tools)): [`packages/zoho-inventory/src/tools`](packages/zoho-inventory/src/tools), through one [`ToolRuntime`](packages/core/src/runtime.ts) (Zod in/out, envelope, `isError`, 10K-token cap, one usage event per call).                                                                                                                                                                                                                                                                   |
-| Rate-limit handling              | Per-org governor: 80/min (Zoho allows 100), concurrency leases 4 free / 8 paid, 50% daily share, 60 s circuit on code 44, never retries code 45, jittered retries on 1070, 10 s queue then `RATE_LIMITED`: [`packages/governor/src`](packages/governor/src), [ADR-0005](docs/adr/0005-governor-defaults-for-undocumented-429-behaviour.md); fault toggles in the playground and explorer.                                                                                                                                     |
+| Rate-limit handling              | Per-org governor (one budget per Zoho organization, key `zoho:<dc>:<org>`, shared by every tenant and key of that org): 80/min (Zoho allows 100), concurrency leases 4 free / 8 paid, 50% daily share, 60 s circuit on code 44, never retries code 45, jittered retries on 1070, 10 s queue then `RATE_LIMITED`: [`packages/governor/src`](packages/governor/src), [ADR-0005](docs/adr/0005-governor-defaults-for-undocumented-429-behaviour.md); fault toggles in the playground and explorer.                               |
 | MCP tool specification           | [`docs/mcp-tools.json`](docs/mcp-tools.json), generated from the live `tools/list` by `pnpm gen:tools`; a test fails if it is stale ([`apps/api/test/mcp-tools-stale.test.ts`](apps/api/test/mcp-tools-stale.test.ts)).                                                                                                                                                                                                                                                                                                       |
 | What the agent can and cannot do | [`docs/agent-capabilities.md`](docs/agent-capabilities.md): CAN, CANNOT (and how it is enforced), LIMITS from code, data handling, error codes with the action an agent should take.                                                                                                                                                                                                                                                                                                                                          |
 
@@ -77,12 +190,12 @@ All 10 are in [`docs/mcp-tools.json`](docs/mcp-tools.json) (server `merchantbrid
 
 | Tool                             | What it answers                                                                       | Zoho calls                                                                                         | Scopes (`ZohoInventory.*.READ`)         |
 | -------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| `zoho_get_connection_status`     | Org, currency, DC, plan, granted/missing scopes, reachability, budget left, circuit   | `/organizations/{id}` (never cached) + governor snapshot                                           | settings                                |
+| `zoho_get_connection_status`     | Org, currency, DC, plan, requested scopes, reachability, budget left, circuit         | `/organizations/{id}` (never cached) + governor snapshot                                           | settings                                |
 | `zoho_search_items`              | Products by text/SKU/name, low stock, status, location                                | `/items`                                                                                           | items, settings                         |
 | `zoho_get_item`                  | One item by id or exact SKU: price, stock per warehouse, reorder level                | `/items/{id}` or `/items?sku=`                                                                     | items, settings                         |
 | `zoho_check_stock`               | Stock for up to 25 item ids or 5 SKUs in one call                                     | `/itemdetails?item_ids=` (+ `/items?sku=` per SKU)                                                 | items, settings                         |
-| `zoho_list_sales_orders`         | Orders newest first; customer/status/date filters over the 600 most recent            | `/salesorders` (up to 3 pages x 200 when filtered)                                                 | salesorders                             |
-| `zoho_get_sales_order`           | One order: line items, shipments (carrier, tracking, delivered), linked invoices      | `/salesorders/{id}` (by number: scan of the 600 most recent)                                       | salesorders                             |
+| `zoho_list_sales_orders`         | Orders newest first; customer/status/date filters over the first 600 Zoho returns     | `/salesorders` (up to 3 pages x 200 when filtered)                                                 | salesorders                             |
+| `zoho_get_sales_order`           | One order: line items, shipments (carrier, tracking, delivered), linked invoices      | `/salesorders/{id}` (by number: scan of the first 600 Zoho returns)                                | salesorders                             |
 | `zoho_search_customers`          | Customers by name/company/email/phone; masked contact details; notes for <= 3 matches | `/contacts` (+ `/contacts/{id}` for <= 3 matches)                                                  | contacts                                |
 | `zoho_list_invoices`             | Invoices by status, customer, due-date range, number, reference                       | `/invoices`                                                                                        | invoices                                |
 | `zoho_get_invoice`               | One invoice: totals, balance, line items, linked sales order                          | `/invoices/{id}` or `/invoices?invoice_number=`                                                    | invoices                                |
@@ -95,50 +208,23 @@ as_of, cached, zoho_url, budget_remaining_today, demo } }`; errors are `isError`
 
 ## Agent Studio guardrails -> features
 
-| Principle (Razorpay's 30 Mar 2026 guardrails post) | Feature here                                                                                                                                   |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Review first, act later                            | Read-only by construction: GET-only client with a path allow-list, READ-only scopes, no write tools                                            |
-| Verified first-party data                          | `as_of`, `cached` and a `zoho_url` deep link on results; money as `{ amount_minor, currency }`; no inference                                   |
-| A validation layer between agent and system        | Zod input/output schemas, ids-not-URLs inputs, field allow-lists, PII masking, Zoho free text as `untrusted_text`                              |
-| Audit trail                                        | Exactly one `usage_event` per tool call (masked args, status, error code, upstream calls, retries); 30-day retention                           |
-| One-time OAuth, available to all agents            | One Zoho consent per organization; agents hold a revocable `mb_live_` key, never a Zoho token                                                  |
-| Private connector scoped to the organization       | Tenant id in every DB row, cache key and governor key; public routes are demo-only                                                             |
-| Data stays where it is                             | No mirroring; cache only for items (60 s) and organization data (300 s)                                                                        |
-| Shared limits are a shared resource                | Governor below Zoho's per-org limits with a 50% daily share (per tenant in v1: [ADR-0008](docs/adr/0008-tenant-per-connect-and-disconnect.md)) |
-
-## Local quickstart (no credentials)
-
-Needs Node >= 22 and pnpm 12 (`corepack enable` picks `pnpm@12.8.1` from `package.json`).
-
-```sh
-pnpm i
-pnpm dev:api    # Fastify on http://localhost:8787: FakeZoho, in-memory stores and Kv, no secrets
-pnpm dev:web    # Next.js on http://localhost:3000 (talks to http://localhost:8787 by default)
-```
-
-Open http://localhost:3000. **/tools** (the explorer) works without any LLM key. **/playground** needs a model:
-`apps/api` reads only its process environment (it loads no `.env` file), so start it as
-
-```sh
-ANTHROPIC_API_KEY=... MB_PLAYGROUND_ENABLED=true pnpm dev:api
-```
-
-Use the local demo server from Claude Code, or inspect it:
-
-```sh
-claude mcp add --transport http mb-demo http://localhost:8787/mcp/demo
-npx @modelcontextprotocol/inspector --cli http://localhost:8787/mcp/demo --transport http --method tools/list
-```
-
-Connecting a real Zoho org locally needs the Zoho client, encryption, state and invite variables
-([`docs/integration.md`](docs/integration.md#self-host)); without them `/oauth/zoho/start` redirects to
-`/connect/error?reason=connect_disabled`. Production deployment: [`docs/deploy.md`](docs/deploy.md).
+| Principle (Razorpay's 30 Mar 2026 guardrails post) | Feature here                                                                                                                                                                                               |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Review first, act later                            | Read-only by construction: GET-only client with a path allow-list, READ-only scopes, no write tools                                                                                                        |
+| Verified first-party data                          | `as_of`, `cached` and a `zoho_url` deep link on results; money as `{ amount_minor, currency }`; no inference                                                                                               |
+| A validation layer between agent and system        | Zod input/output schemas, ids-not-URLs inputs, field allow-lists, PII masking, Zoho free text as `untrusted_text`                                                                                          |
+| Audit trail                                        | Exactly one `usage_event` per tool call (masked args, status, error code, upstream calls, retries); 30-day retention                                                                                       |
+| One-time OAuth, available to all agents            | One Zoho consent per organization; agents hold a revocable `mb_live_` key, never a Zoho token                                                                                                              |
+| Private connector scoped to the organization       | Tenant id in every DB row and cache key; the governor is keyed by Zoho organization; public routes are demo-only                                                                                           |
+| Data stays where it is                             | No mirroring; cache only for items (60 s) and organization data (300 s)                                                                                                                                    |
+| Shared limits are a shared resource                | Governor below Zoho's per-org limits with a 50% daily share; one budget per organization (`zoho:<dc>:<org>`) shared by all of its tenants ([ADR-0008](docs/adr/0008-tenant-per-connect-and-disconnect.md)) |
 
 ## Repo map
 
 ```
 apps/api                 Fastify: /mcp, /mcp/demo, /oauth/zoho/*, /api/{status,tools,scenarios,explorer/call,playground},
-                         /api/connection/disconnect, /health/{live,ready}, /metrics; Dockerfile + fly.toml
+                         /api/connection/disconnect, /health/{live,ready}, /metrics; Dockerfile + fly.toml;
+                         src/dev/: local fake-live mode (fake Zoho Accounts + FakeZoho, dev only)
 apps/web                 Next.js 16 site: /, /playground, /tools, /connect (+ success, error), /docs; e2e/ and e2e-real/
 packages/core            frozen contract: defineTool, ToolRuntime, envelope, errors, Kv, Clock, cursors, money, masking,
                          TraceEvent, API_ROUTES, SCENARIOS
@@ -154,31 +240,42 @@ docs/                    PLAN, STATUS, capabilities, integration, deploy, runboo
 
 ## Testing
 
-`pnpm test` from the repo root, run 2026-10-03: **624 tests in 45 files, all passing.**
+`pnpm test` from the repo root, run 2026-10-03: **658 tests in 46 files, all passing.**
 
-| Package                   | Tests | What they cover                                                                                                                                                                       |
-| ------------------------- | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core`           |    13 | ToolRuntime envelope, field allow-list, `INVALID_INPUT` as a result, hidden internal errors, money, cursors, Kv sweep, arg-name masking                                               |
-| `apps/web` (Vitest)       |    27 | SSE parser, trace reducer, schema-to-arguments form, JSON-RPC summaries, connect helpers, markdown rendering                                                                          |
-| `packages/governor`       |    63 | fake-timer tests for codes 44/45/1070, 5xx, timeouts, leases, circuit half-open, cache coalescing                                                                                     |
-| `packages/auth`           |   112 | state tamper/replay/expiry, accounts-server allow-list, vault, single-flight refresh (20 parallel calls -> 1 token request), no secrets in logs                                       |
-| `packages/zoho-inventory` |   161 | contract suite per tool (valid -> schema-valid, bad args -> `INVALID_INPUT`, unknown id -> `NOT_FOUND`, <= 10K tokens), GET-only client, masking, injection stays in `untrusted_text` |
-| `packages/db`             |    52 | one store contract (tenants, keys, connections, tenant isolation, usage) on PGlite and the memory store; migrations                                                                   |
-| `apps/api`                |    86 | `/mcp` + `/mcp/demo` in both MCP protocol eras, OAuth routes, disconnect, explorer, playground, security suite, usage events and log redaction                                        |
-| `evals`                   |   110 | case validation, assertions, CLI, report gating, scripted reference paths against the demo endpoint                                                                                   |
+| Package                   | Tests | What they cover                                                                                                                                                                                                                                                                                                               |
+| ------------------------- | ----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core`           |    13 | ToolRuntime envelope, field allow-list, `INVALID_INPUT` as a result, hidden internal errors, money, cursors, Kv sweep, arg-name masking                                                                                                                                                                                       |
+| `apps/web` (Vitest)       |    28 | SSE parser, trace reducer, schema-to-arguments form, JSON-RPC summaries, connect helpers, markdown rendering                                                                                                                                                                                                                  |
+| `packages/governor`       |    63 | fake-timer tests for codes 44/45/1070, 5xx, timeouts, leases, circuit half-open, cache coalescing                                                                                                                                                                                                                             |
+| `packages/auth`           |   112 | state tamper/replay/expiry, accounts-server allow-list, vault, single-flight refresh (20 parallel calls -> 1 token request), no secrets in logs                                                                                                                                                                               |
+| `packages/zoho-inventory` |   166 | contract suite per tool (valid -> schema-valid, bad args -> `INVALID_INPUT`, unknown id -> `NOT_FOUND`, <= 10K tokens), GET-only client, masking, injection stays in `untrusted_text`                                                                                                                                         |
+| `packages/db`             |    52 | one store contract (tenants, keys, connections, tenant isolation, usage) on PGlite and the memory store; migrations                                                                                                                                                                                                           |
+| `apps/api`                |   114 | `/mcp` + `/mcp/demo` in both MCP protocol eras, OAuth routes (incl. revoke on abandoned connect), disconnect, org-keyed governor, demo fault-header 400s, explorer, playground, security suite, usage events and log redaction, fake-live mode (fake upstream routing, production refusal, end-to-end connect and disconnect) |
+| `evals`                   |   110 | case validation, assertions, CLI, report gating, scripted reference paths against the demo endpoint                                                                                                                                                                                                                           |
 
-Browser suites in `apps/web` (Playwright, Chromium; not in CI yet):
+Browser suites in `apps/web` (Playwright, Chromium; commands in [Browser suites](#browser-suites)), both run by the
+`e2e` CI job:
 
 - **Mocked e2e** (`pnpm --filter @mb/web e2e`, [`playwright.config.ts`](apps/web/playwright.config.ts)): 32 tests
   (pages, playground trace/fault/refusal/rate-limit states, screenshots at 390 and 1440 px in light and dark). 32/32
   passed locally on 2026-10-03.
-- **Real stack** ([`playwright.real.config.ts`](apps/web/playwright.real.config.ts)): 35 tests, no mocks, against a
-  running web + API (local or prod via `PLAYWRIGHT_BASE_URL`), with screenshots reviewed by hand. Local run on
+- **Real stack** ([`playwright.real.config.ts`](apps/web/playwright.real.config.ts)): **7 behavioural + 28 visual
+  checks**, no mocks, against a running web + API (local, CI, or prod via `PLAYWRIGHT_BASE_URL`). The behavioural
+  tests cover the live tool count, the docs page's demo URL answering `tools/list`, the explorer running
+  `zoho_get_item` and the code-44 fault, and the connect and playground states; the visual checks screenshot 7 pages
+  at 390 and 1440 px in light and dark and fail on horizontal overflow or text below WCAG AA contrast. Local run on
   2026-10-03 against the credential-free API: 35/35 passed.
+- **Screenshots:** both suites write PNGs (gitignored). In CI the `e2e` job uploads `apps/web/e2e/screenshots/`,
+  `apps/web/e2e-real/screenshots/` and the HTML reports as the **`playwright-<run id>-<attempt>` artifact** of every
+  run, pass or fail (Actions run page, "Artifacts"). CI has not run yet (no GitHub remote), so no artifact exists
+  today; locally they are in the folders above.
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): lint, typecheck, test, web build, Docker image build with
-a boot smoke test (health, MCP `tools/list`, the stdlib Python client in
-[`examples/python/`](examples/python/mcp_demo_client.py), graceful shutdown), gitleaks; CodeQL and Dependabot run separately.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): lint, typecheck, test, web build; the `e2e` job (mocked
+suite, then the API in development mode and a production web build on :8787/:3000 for the real-stack suite);
+Docker image build with a boot smoke test (production refuses to start without its secrets or with
+`MB_DEV_FAKE_ZOHO=true`; health, MCP `tools/list`, the stdlib Python client in
+[`examples/python/`](examples/python/mcp_demo_client.py), graceful shutdown); gitleaks. CodeQL and Dependabot run
+separately.
 
 ## Evals
 
@@ -206,7 +303,8 @@ it skips and makes no model calls.
   attempts limited to 10 per IP per 10 min.
 - **Demo isolation:** each demo session gets its own FakeZoho instance, governor key and cache prefix (`demo:{session}`).
   Session ids come from `X-MB-Session`; callers without one get a server-derived `ip-` session that clients cannot
-  name. `X-MB-Faults` is ignored unless the client sent its own session id.
+  name. `/mcp/demo` answers HTTP 400 when `X-MB-Faults` names an unknown fault or arrives without a valid client
+  `X-MB-Session` (faults never apply to the shared per-IP session), instead of silently ignoring the header.
 - **Client IP:** `MB_CLIENT_IP_SOURCE` = `socket` (default), `fly-client-ip` (default on Fly) or `xff-last`; IPv6
   callers are bucketed by /64. Client-sent `X-Forwarded-For` is never trusted by default.
 - **Abuse and cost:** `/mcp/demo` 60/min per IP; `/mcp` 600/min per key and 30 failed key lookups per IP per minute;
@@ -217,14 +315,21 @@ it skips and makes no model calls.
   do not reflect the URL; `/metrics` is 404 in production unless `MB_METRICS_TOKEN` is set (then bearer).
 - **Logs and audit:** logs carry paths without query strings and never SQL parameters, tokens, codes or unmasked
   contact details; usage events keep only declared argument names, with free text replaced; 30-day retention.
+- **Local fake-live mode** (`MB_DEV_FAKE_ZOHO=true`) is development-only: the server refuses it when
+  `NODE_ENV=production` (the CI image smoke test checks this) or when `DATABASE_URL`/`REDIS_URL` is set, keeps all
+  Zoho traffic in-process (other hosts on that outbound channel, e.g. Turnstile, are refused), and prints only its
+  own throwaway dev key.
 
 ## Limitations
 
-- **Sales-order filters run client-side** over the 600 most recent orders (3 x 200): Zoho documents no
-  `/salesorders` filters. Results report `scan.more_beyond_scan`; each filtered page costs up to 3 upstream calls.
+- **Sales-order filters run client-side** over the first 600 orders Zoho returns (3 x 200), believed newest first:
+  Zoho documents no `/salesorders` filters or sort order. Results report `scan.more_beyond_scan` and
+  `scan.order_verified` (whether those orders really came newest first); each filtered page costs up to 3 upstream
+  calls.
   The related-documents fallback in [ADR-0006](docs/adr/0006-sales-order-search-fallback.md) is not implemented.
-- **Each connect creates a new tenant and key** (no org picker; Zoho's default org is used). Two connects of one org
-  get separate governor budgets that could jointly exceed Zoho's 100/min ([ADR-0008](docs/adr/0008-tenant-per-connect-and-disconnect.md)).
+- **Each connect creates a new tenant and key** (no org picker; Zoho's default org is used). Tenants of one
+  organization share one governor budget (`zoho:<dc>:<org>`), but each keeps its own refresh token and key, and a
+  reconnect does not repair the old tenant ([ADR-0008](docs/adr/0008-tenant-per-connect-and-disconnect.md)).
 - **No OAuth on the MCP leg yet:** live tenants use a bearer key, so Claude.ai can use only the demo endpoint.
 - **No replay fallback in the playground:** when the model budget or rate limit is hit, the playground shows an error
   and points to the explorer, which needs no LLM.
@@ -250,7 +355,8 @@ it skips and makes no model calls.
 4. **Adversarial review-and-fix per package, failing tests first.** Each package was reviewed for correctness and
    security; every finding became a failing test before the fix (see `apps/api/test/security.test.ts`).
 5. **Real-stack e2e with screenshot review.** Playwright drove the real web app against the real API; screenshots at
-   390 and 1440 px in both themes were read back and fixed (commit `e746d34`).
+   390 and 1440 px in both themes were read back and fixed (commit `e746d34`). The suite audits overflow and contrast
+   itself (`apps/web/e2e-real/audit.ts`), and the CI `e2e` job publishes its screenshots as an artifact.
 
 The toolkit is committed in [`.claude/`](.claude/): `settings.json` (permissions that deny `.env*` access and secret
 commands; a guard hook that blocks `.env` access, non-GET requests to Zoho hosts and human-only commands; format and

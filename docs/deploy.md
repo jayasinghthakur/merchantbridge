@@ -16,8 +16,9 @@ issues, PRs, chats or this file.
 
 > **Docker is not installed on the dev machine.** The `docker build (api image)` job in
 > [`ci.yml`](../.github/workflows/ci.yml) is the first real build of the image. Push a branch and let that job go
-> green before the first `fly deploy`; it also boots the image (development mode, no secrets) and checks
-> `/health/live`, `/health/ready`, `/mcp/demo tools/list` and a graceful SIGTERM exit.
+> green before the first `fly deploy`; it also checks that production mode refuses to start without its secrets or
+> with `MB_DEV_FAKE_ZOHO=true`, boots the image (development mode, no secrets) and checks `/health/live`,
+> `/health/ready`, `/mcp/demo tools/list` and a graceful SIGTERM exit.
 
 ## 1. Accounts (once)
 
@@ -82,6 +83,12 @@ client-sent `X-Forwarded-For` is never trusted unless you choose `xff-last`. Whe
 `MB_ENCRYPTION_KEY`, `MB_STATE_SECRET` and `MB_CONNECT_INVITE_CODE` are set. The playground needs
 `ANTHROPIC_API_KEY` and `MB_PLAYGROUND_ENABLED=true`. Names come from
 [`apps/api/src/config.ts`](../apps/api/src/config.ts).
+
+> **Never set `MB_DEV_FAKE_ZOHO` in production** (not as a secret, not in `fly.toml [env]`, not in Vercel). It is the
+> local fake-live mode: it seeds a tenant and key over fake data, fills ephemeral OAuth secrets and replaces Zoho with
+> an in-process fake. The server refuses to start with `MB_DEV_FAKE_ZOHO=true` and `NODE_ENV=production` (exit 1,
+> "is a local development mode and is refused"), and CI's image smoke test checks that refusal; `fly secrets list`
+> must not show it.
 
 Non-secret defaults (`NODE_ENV=production`, `HOST`, `PORT=8787`, `LOG_LEVEL=info`,
 `MB_PLAYGROUND_MODEL=claude-haiku-4-5`, `MB_PLAYGROUND_DAILY_CAP=300`) live in `fly.toml [env]`; do not set them as
@@ -259,8 +266,10 @@ PLAYWRIGHT_BASE_URL=WEB pnpm --filter @mb/web exec playwright test -c playwright
 
 It asserts the live tool count, the docs page's demo URL answering `tools/list`, the explorer running `zoho_get_item`
 and the code-44 fault, the connect and playground states, and writes screenshots at 390 and 1440 px in light and dark
-to `apps/web/e2e-real/screenshots/` for review. With connect and the playground enabled on prod, those two specs check
-the enabled state instead of the disabled note and make no model call. Do not run it within a minute of the probe above.
+to `apps/web/e2e-real/screenshots/` for review (7 behavioural + 28 visual checks; the same suite runs locally in the
+CI `e2e` job, whose artifact holds the local screenshots). With connect and the playground enabled on prod, those two
+specs check the enabled state instead of the disabled note and make no model call. Do not run it within a minute of
+the probe above.
 
 **5. One live tenant.** After connecting the trial org: `zoho_get_connection_status` over `/mcp` with the key returns
 the organization ([integration.md](integration.md) §2), and a disposable second connection can be switched off with
