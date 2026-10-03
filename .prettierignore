@@ -1,0 +1,5 @@
+pnpm-lock.yaml
+docs/vendor/
+docs/mcp-tools.json
+**/.next/
+**/dist/

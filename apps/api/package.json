@@ -1,0 +1,34 @@
+{
+  "name": "@mb/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "gen:tools": "tsx scripts/gen-tools.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.131.0",
+    "@fastify/cors": "11.3.0",
+    "@mb/auth": "workspace:*",
+    "@mb/core": "workspace:*",
+    "@mb/db": "workspace:*",
+    "@mb/governor": "workspace:*",
+    "@mb/zoho-inventory": "workspace:*",
+    "@modelcontextprotocol/client": "2.3.0",
+    "@modelcontextprotocol/fastify": "2.0.1",
+    "@modelcontextprotocol/node": "2.1.1",
+    "@modelcontextprotocol/server": "2.3.0",
+    "fastify": "5.12.5",
+    "ioredis": "6.0.0",
+    "pino": "10.4.0",
+    "prom-client": "15.1.3",
+    "zod": "4.6.5"
+  }
+}

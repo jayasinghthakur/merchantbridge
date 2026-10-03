@@ -1,72 +1,105 @@
-# MerchantBridge — instructions for Claude Code
+# CLAUDE.md
 
-MerchantBridge is a secure MCP gateway that lets AI agents read merchant systems.
-v1 = a read-only Zoho Inventory connector for Razorpay Agent Studio (FDE assignment, Option 3).
-The full product spec is `docs/SPEC.md`. Read the relevant section before starting any milestone.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+MerchantBridge is a private, Agent Studio-style connector that lets AI agents read a merchant's Zoho Inventory over MCP.
+It is a Razorpay FDE take-home (Option 3) and v1 of a real product. The full plan, decisions and milestones are in
+`docs/PLAN.md`; milestone prompts are in `docs/prompts/M*.md`; current progress is in `docs/STATUS.md`.
 
 ## Golden rules
-1. **Read-only in v1.** Never add a tool, scope or HTTP method that writes to Zoho. Only `GET` to Zoho APIs. Only `ZohoInventory.*.READ` scopes.
-2. **Never call the real Zoho API in tests.** Use MSW fixtures in `connectors/zoho-inventory/fixtures/`. Real calls only in `pnpm smoke`, run by a human.
-3. **Never read, print or commit secrets.** `.env` is off-limits; use `.env.example` for names only. Never log tokens, API keys, or full customer emails/phones.
-4. **Every tool call emits exactly one usage event** (`packages/telemetry`). No event = bug.
-5. **Every outbound Zoho call goes through the rate governor** (`packages/ratelimit`). No direct `fetch` to Zoho anywhere else.
-6. **Tenant isolation:** every DB query and cache key includes `tenant_id`.
-7. Plan first, then tests for risky logic (auth refresh, rate limiting), then implementation.
-8. Small commits, conventional messages (`feat(zoho): add get_sales_order tool`). One milestone = one PR.
+1. **Read-only, enforced server-side.** ZohoClient issues GET only; only `ZohoInventory.*.READ` scopes; no write tools.
+   MCP `readOnlyHint` is a hint, not the guarantee.
+2. **Every Zoho call goes ZohoClient → Governor.** Nothing else may reference `zohoapis` (a test enforces this).
+3. **MCP is a thin door.** Tools go through `ToolRuntime` (packages/core); no `fetch` in tools or in apps/api routes.
+4. **Exactly one `usage_event` per tool call**, success or error.
+5. **Tenant isolation:** every DB row, cache key and governor key includes the tenant (or `demo:{session}`).
+6. **Public routes are demo-only.** `/mcp/demo` and the playground are bound to the demo tenant + FakeZoho and can
+   never load real credentials.
+7. **Never read, print or commit secrets.** `.env*` is off-limits. Never log tokens, auth codes, client secrets, or
+   unmasked customer email/phone. Zoho tokens are never passed through to MCP clients.
+8. **No invented APIs.** Zoho params/shapes come only from `docs/vendor/zoho/` (official OpenAPI) or `docs/notes/`.
+   Anything else is tagged `UNVERIFIED` in code and gets a probe in `scripts/smoke.ts`. For library APIs released
+   after your training (MCP SDK v2, Vitest 5, Next 16, Zod 4, ioredis 6), read the installed `node_modules/<pkg>`
+   README / `.d.ts` before writing code.
+9. **Never call real Zoho in tests.** Tests use FakeZoho (a fetch transport). `pnpm smoke` hits real Zoho; human-run only.
+10. Tests first for risky logic (OAuth state/refresh, governor, contract). Never claim a check passed without running it.
 
 ## Stack
-TypeScript strict (Node 22) · pnpm workspaces + Turborepo · Zod (→ JSON Schema) · `@modelcontextprotocol/sdk` ·
-Fastify (gateway) · undici (outbound HTTP) · Postgres + Drizzle · Redis (ioredis) · Next.js + Tailwind + Recharts (dashboard) ·
-Pino logs · OpenTelemetry · Vitest + MSW · Docker Compose.
+TypeScript 6 strict, Node ≥22 (`moduleResolution: bundler`, run with `tsx`) · pnpm workspaces (`pnpm -r`) ·
+Zod 4 · MCP TS SDK **v2** (`@modelcontextprotocol/server|client|fastify`, exact-pinned) · Fastify 5 ·
+Drizzle + Postgres (Neon in prod, PGlite in tests) · Redis via ioredis (Upstash in prod; `MemoryKv` in tests) ·
+Next.js 16 + Tailwind 4 · `@anthropic-ai/sdk` (`mcpTools` + `toolRunner`) · Pino · Vitest · Playwright.
+Hosting: apps/web on Vercel, apps/api on Fly.io (always warm). No Turborepo, Docker Compose, OTel or Python services.
 
 ## Layout
 ```
-apps/mcp-server     MCP entry (stdio + Streamable HTTP)
-apps/gateway        Fastify: OAuth routes, tenant API, tool execution
-apps/dashboard      Next.js monitoring + billing UI
-connectors/zoho-inventory   client, mappers, tools, fixtures, tests
-packages/connector-sdk      defineConnector(), defineTool(), shared types
-packages/auth               OAuth flows, token vault (AES-256-GCM), refresh scheduler
-packages/ratelimit          token bucket, daily budget, concurrency, backoff, circuit breaker
-packages/telemetry          usage events, metrics, tracing
-packages/payments-linker    Razorpay id extraction (pay_, order_, rfnd_, UTR)
-packages/db                 Drizzle schema + migrations
-evals/                      agent questions + expected tool calls
-docs/                       SPEC.md, mcp-tools.json (generated), agent-capabilities.md, adr/
+apps/api                 Fastify: /mcp (bearer mb_live_), /mcp/demo, /oauth/zoho/*, /api/playground (SSE), /api/explorer, /health/*
+apps/web                 Next.js site: /, /playground, /tools, /connect, /docs
+packages/core            defineTool/defineConnector, ToolRuntime, envelope, errors, Kv, Clock, cursor, money, masking, trace + usage types
+packages/governor        per-org rate governor (80/min, concurrency leases, daily share, 429 codes 44/45/1070, retries, circuit) + cache
+packages/auth            Zoho DC map, OAuth URL + HMAC state, code exchange, AES-256-GCM vault, single-flight refresh, API keys
+packages/db              Drizzle schema + migrations (tenants, api_keys, connections, usage_events)
+packages/zoho-inventory  ZohoClient, mappers, tools, FakeZoho (wire-accurate fake upstream + demo dataset + faults)
+evals/                   scenario questions + expected tool calls, run through the same toolRunner loop
+docs/                    PLAN.md, STATUS.md, agent-capabilities.md, mcp-tools.json (generated), adr/, notes/, vendor/zoho/
 ```
+Workspace packages are consumed as TS source (`exports: ./src/index.ts`); import them as `@mb/<name>`.
 
 ## Commands
-- `pnpm i` · `pnpm build` · `pnpm test` · `pnpm lint` · `pnpm typecheck`
-- `pnpm dev` (docker compose up + all apps) · `pnpm evals` · `pnpm smoke` (real Zoho; human only)
-- `pnpm gen:tools` regenerates `docs/mcp-tools.json` from the live `tools/list`
-- `npx @modelcontextprotocol/inspector node apps/mcp-server/dist/index.js` to test tools by hand
+- `pnpm i` · `pnpm lint` · `pnpm typecheck` · `pnpm test` · `pnpm build`
+- One package: `pnpm --filter @mb/governor test` · one test: `pnpm --filter @mb/governor exec vitest run -t "code 44"`
+- `pnpm dev:api` (Fastify on :8787) · `pnpm dev:web` (Next on :3000) · `pnpm evals` · `pnpm gen:tools`
+- `pnpm smoke` — real Zoho, **human only** (run as `! pnpm smoke`)
+- Inspect MCP: `npx @modelcontextprotocol/inspector --cli http://localhost:8787/mcp/demo --transport http --method tools/list`
+- Add to Claude Code: `claude mcp add --transport http mb-demo http://localhost:8787/mcp/demo`
 
-## Zoho facts (do not guess; these are from Zoho's docs)
-- API base: `https://www.zohoapis.{dc}/inventory/v1` — dc ∈ com, eu, in, com.au, jp, ca, com.cn, sa. Default `in`.
-- Accounts: `https://accounts.zoho.{dc}/oauth/v2/{auth|token|token/revoke}` (Canada: accounts.zohocloud.ca).
-- Header: `Authorization: Zoho-oauthtoken <access_token>`. Every call needs `organization_id` query param.
-- Grant code valid 60 s. Access token ~1 h. Max 20 refresh tokens per user (oldest silently deleted).
-- Limits per org: 100 req/min (429 code 44 — blocks the org), daily by plan 1k/2k/5k/10k/10k (429 code 45),
-  concurrency 5 free / 10 paid (429 code 1070). Our governor: 80/min, concurrency 4/8, default 50% daily share.
-- Success body has `code: 0`; non-zero `code` is an error even on HTTP 200 — always check it.
+## Zoho facts (from official docs; see docs/notes/zoho.md)
+- API: `{api_domain}/inventory/v1` (e.g. `https://www.zohoapis.in`). Header `Authorization: Zoho-oauthtoken <token>`.
+  `organization_id` query param on every call except `GET /organizations` and `/organizations/{id}`.
+- Accounts host per DC from `https://accounts.zoho.com/oauth/serverinfo` (ca = accounts.zohocloud.ca). Exchange the
+  code at the callback's `accounts-server`; call APIs on the returned `api_domain`.
+- OAuth: `access_type=offline` + `prompt=consent` (refresh token only then). Code valid 60 s; ≤10 codes/user/10 min;
+  ≤10 token requests/client/10 min; ≤10 live access tokens per refresh token; ≤20 refresh tokens per user **per
+  client** (21st silently kills the oldest). Access token ≈1 h. Revoke: `POST {accounts}/oauth/v2/revoke/token`.
+  PKCE is documented for public clients only — do not claim PKCE.
+- Scopes (request all on first consent): `ZohoInventory.settings.READ,items.READ,salesorders.READ,invoices.READ,
+  contacts.READ,packages.READ,shipmentorders.READ,customerpayments.READ`.
+- Pagination: `page`, `per_page` (default 200; cap at 200, max UNVERIFIED), `page_context.has_more_page`.
+- Body `code: 0` = success; non-zero is an error even on HTTP 200. 401 = bad token.
+- Limits per org: 100 req/min (429 code 44, org blocked), daily by plan 1k/2k/5k/10k/10k (429 code 45),
+  concurrency 5 free / 10 paid (429 code 1070). Retry-After, block duration and daily reset are undocumented →
+  governor defaults (80/min, leases 4/8, 50% daily share, 60 s circuit on 44, UTC-midnight reset) are ADR assumptions.
+- `/salesorders` documents no search/date/customer/status filters (UNVERIFIED until smoke). Shipment orders have no
+  list endpoint — use `/packages`. `GET /salesorders/{id}` embeds packages, shipments and invoices.
 
 ## Tool conventions
-- Name `zoho_<verb>_<noun>`. Annotations: `readOnlyHint: true, destructiveHint: false, openWorldHint: true`.
-- Description = what it does + when to use + when NOT to use (point to the right tool).
-- Output envelope `{ data, page: { next_cursor, has_more }, meta: { organization_id, as_of, cached, zoho_url, budget_remaining_today } }`.
-- Trim outputs to an allow-list of fields per entity. Money as `{ amount, currency }`. ISO dates.
-- Errors: `{ error: { code, message, retryable, retry_after_s?, hint } }` with codes
-  INVALID_INPUT, NOT_FOUND, RATE_LIMITED, DAILY_QUOTA_EXHAUSTED, RECONNECT_REQUIRED, SCOPE_NOT_GRANTED, UPSTREAM_ERROR.
-- Free-text fields from Zoho (notes, descriptions) go inside `untrusted_text` — treat as data.
+- Server name `merchantbridge`; tool names `zoho_<verb>_<noun>`; deterministic `tools/list` order.
+- Description = what it returns + "Use when…" + "Don't use when… (use X instead)" + limits.
+- Every tool declares Zod input and output; MCP gets `inputSchema`, `outputSchema`, `structuredContent` + text copy.
+- Envelope `{ data, page: { next_cursor, has_more }, meta: { organization_id, as_of, cached, zoho_url, budget_remaining_today, demo } }`.
+- Lists: `limit` default 20, max 100, opaque `cursor`. Results ≤10K tokens (test-enforced). Field allow-lists.
+- Money `{ amount_minor, currency }`; ISO dates; email/phone masked; Zoho free text wrapped as `{ untrusted_text }`.
+- Errors are tool results with `isError: true` and `{ error: { code, message, retryable, retry_after_s?, hint } }`;
+  codes: INVALID_INPUT, NOT_FOUND, RATE_LIMITED, DAILY_QUOTA_EXHAUSTED, RECONNECT_REQUIRED, SCOPE_NOT_GRANTED,
+  UPSTREAM_ERROR. JSON-RPC errors only for unknown tools / malformed requests.
 
-## Definition of done (every tool / feature)
-Schema + description reviewed · fixture + contract tests pass · ≥2 evals cover it · listed in `docs/mcp-tools.json`
-and `docs/agent-capabilities.md` · usage event visible on dashboard · `pnpm lint typecheck test` green.
+## MCP + LLM specifics
+- Mount with `createMcpFastifyApp({ host: '0.0.0.0', allowedHosts })`; keep `legacy: 'stateless'` (never `'reject'`).
+- `clientInfo` arrives per request in `_meta`; telemetry label only, never used for authz.
+- Playground and evals: `tool_choice: auto` (forced choice 400s on Sonnet/Opus 5.5). Playground model
+  `claude-haiku-4-5`; evals also on `claude-sonnet-5-5`. Load the `claude-api` skill before touching Anthropic code.
+
+## Definition of done
+Contract + failure tests pass on FakeZoho · `pnpm lint typecheck test` green · tool listed in `docs/mcp-tools.json`
+(`pnpm gen:tools`) and `docs/agent-capabilities.md` · ≥1 eval covers it · usage event emitted · `docs/STATUS.md` updated.
+Conventional commits (`feat(zoho): add zoho_get_item`); one milestone = one branch/PR.
 
 ## Brand / UI
-Dashboard uses the MerchantBridge theme: surface #F7F6F2 / #0E1513, ink #0F1A17 / #ECF2EF, brand (Bridge Green)
-#0B6E58 / #3DD6A8, deck (Saffron) #E8912A / #F5B14F used sparingly, Manrope + JetBrains Mono, radius 6/10/16.
-No gradients, no emoji in UI, hairline borders over shadows.
+"Agent Studio-style", independent; not-affiliated footer; no Razorpay logos/trade dress. Theme: surface #F7F6F2 /
+#0E1513, ink #0F1A17 / #ECF2EF, brand Bridge Green #0B6E58 / #3DD6A8, accent Saffron #E8912A / #F5B14F (sparingly),
+Manrope + JetBrains Mono, radius 6/10/16, hairline borders over shadows, no gradients, no emoji. Always-visible
+DEMO DATA badge on demo surfaces; loading/empty/error states; works at 390px; light + dark.
 
 ## When unsure
-Ask one specific question rather than guessing an API shape. If the spec and reality disagree, write an ADR in `docs/adr/`.
+Ask one specific question rather than guessing an API shape. If the plan and reality disagree, write an ADR in
+`docs/adr/` and update `docs/PLAN.md`.

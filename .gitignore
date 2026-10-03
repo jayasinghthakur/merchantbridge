@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.vercel/
+playwright-report/
+test-results/
+evals/reports/*.tmp.json
+docs/vendor/zoho/*.zip
