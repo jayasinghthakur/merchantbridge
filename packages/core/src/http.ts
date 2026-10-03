@@ -33,6 +33,8 @@ export type ConnectErrorReason =
   | 'exchange_failed'
   | 'no_organization'
   | 'unsupported_dc'
+  /** The merchant's Zoho account lives in a different data center than the one picked. */
+  | 'dc_mismatch'
   | 'internal';
 
 export interface StatusResponse {

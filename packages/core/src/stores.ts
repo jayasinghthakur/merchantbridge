@@ -49,7 +49,7 @@ export interface ConnectionRecord {
   dc: string;
   /** e.g. `https://accounts.zoho.in` — validated against the known Zoho host allow-list. */
   accountsServer: string;
-  /** e.g. `https://www.zohoapis.in` — from the token response `api_domain`. */
+  /** The token response's `api_domain`, validated against the auth DC map. */
   apiDomain: string;
   organizationId: string;
   organizationName: string | null;

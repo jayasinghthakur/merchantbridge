@@ -37,6 +37,7 @@ export type GovernorDecision =
   | { type: 'admitted'; waited_ms: number }
   | { type: 'queued'; reason: 'minute_bucket' | 'concurrency'; wait_ms: number }
   | { type: 'retried'; attempt: number; reason: string; backoff_ms: number }
+  /** `until_ms` is an epoch timestamp (ms) at which the circuit may close. */
   | { type: 'circuit_open'; until_ms: number; reason: string }
   | { type: 'rejected'; code: 'RATE_LIMITED' | 'DAILY_QUOTA_EXHAUSTED'; retry_after_s?: number }
   | { type: 'cache_hit' }

@@ -3,3 +3,4 @@ docs/vendor/
 docs/mcp-tools.json
 **/.next/
 **/dist/
+packages/db/drizzle/
