@@ -13,7 +13,11 @@ export const FALLBACK_DEMO_MCP_URL = `${API_BASE_URL}${API_ROUTES.mcpDemo}`;
 
 export const LIVE_MCP_URL = `${API_BASE_URL}${API_ROUTES.mcp}`;
 
-export const DEFAULT_PLAYGROUND_MODEL = 'claude-haiku-4-5';
+/**
+ * Model id in the Messages API snippet on /docs. That snippet is for the reader's own Anthropic account, so it
+ * stays a Claude model whatever LLM this deployment's playground runs (/api/status `model`).
+ */
+export const MESSAGES_API_MODEL = 'claude-haiku-4-5';
 
 export const MAX_MESSAGE_CHARS = 500;
 

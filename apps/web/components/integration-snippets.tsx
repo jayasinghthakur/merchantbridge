@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { DEFAULT_PLAYGROUND_MODEL } from '../lib/config';
+import { MESSAGES_API_MODEL } from '../lib/config';
 import {
   agentSdkPython,
   agentSdkTs,
@@ -13,7 +13,6 @@ import {
   KEY_PLACEHOLDER,
   messagesApiCurl,
 } from '../lib/snippets';
-import { useStatus } from '../lib/use-status';
 import { CodeBlock } from './code-block';
 import { useDemoMcpUrl, useLiveMcpUrl } from './mcp-command';
 import { InlineCode } from './ui';
@@ -28,10 +27,8 @@ function Sub({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export function IntegrationSnippets() {
-  const status = useStatus();
   const demoUrl = useDemoMcpUrl();
   const liveUrl = useLiveMcpUrl();
-  const model = status.kind === 'ready' ? status.status.model : DEFAULT_PLAYGROUND_MODEL;
   const [lang, setLang] = useState<'ts' | 'py'>('ts');
 
   return (
@@ -92,7 +89,11 @@ export function IntegrationSnippets() {
       </Sub>
 
       <Sub title="Claude Messages API (MCP connector)">
-        <CodeBlock code={messagesApiCurl(liveUrl, model)} label="Shell" />
+        <CodeBlock
+          code={messagesApiCurl(liveUrl, MESSAGES_API_MODEL)}
+          label="Shell"
+          testId="docs-messages-api"
+        />
         <p className="text-sm text-ink-muted">
           Requires the <InlineCode>mcp-client-2025-11-20</InlineCode> beta header and both halves:
           the <InlineCode>mcp_servers</InlineCode> entry and an <InlineCode>mcp_toolset</InlineCode>{' '}

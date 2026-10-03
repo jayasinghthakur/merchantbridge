@@ -10,7 +10,13 @@ import { SseStream } from '../infra/sse';
 import { verifyTurnstile } from '../infra/turnstile';
 import type { FetchHandler } from '../inprocess';
 import { clientIp, clientIpKey, copyReplyHeadersToRaw } from '../http-util';
-import { runAgent } from './engine';
+import {
+  LlmProviderError,
+  isAuthRejected,
+  isQuotaExhausted,
+  llmRetryAfterSeconds,
+} from './llm-error';
+import { createAgentRunner } from './provider';
 
 export const PLAYGROUND_DISABLED_MESSAGE =
   'The live agent is paused; use the Tools explorer, which needs no LLM.';
@@ -44,28 +50,56 @@ function apiError(
   return reply.code(status).send({ error: body } satisfies ApiErrorResponse);
 }
 
-/** Anthropic failures → agent-safe SSE error events. Details stay in the logs. */
+const BUDGET_MESSAGE =
+  'The demo has used its AI budget for now; the Tools explorer still works without an LLM.';
+const BUSY_MESSAGE = 'The AI model is busy right now; try again shortly.';
+const INTERNAL_MESSAGE = 'The agent hit an unexpected error. Please try again.';
+
+function rateLimited(retry: number | null): Omit<ErrorEvent, 'type'> {
+  return {
+    code: 'RATE_LIMITED',
+    message: BUSY_MESSAGE,
+    ...(retry !== null && Number.isFinite(retry) && retry > 0
+      ? { retry_after_s: Math.ceil(retry) }
+      : {}),
+  };
+}
+
+/** HTTP status of an LLM provider failure (Anthropic SDK or OpenAI-compatible), if there was a response. */
+export function llmErrorStatus(e: unknown): number | undefined {
+  if (e instanceof Anthropic.APIError) return typeof e.status === 'number' ? e.status : undefined;
+  if (e instanceof LlmProviderError) return e.status > 0 ? e.status : undefined;
+  return undefined;
+}
+
+/** The provider refused the configured key (401/403, not a quota message). */
+export function isLlmKeyRejected(e: unknown): boolean {
+  if (e instanceof LlmProviderError) return isAuthRejected(e);
+  return e instanceof Anthropic.APIError && (e.status === 401 || e.status === 403);
+}
+
+/**
+ * LLM provider failures → agent-safe SSE error events. Details stay in the logs. Rate limits → RATE_LIMITED
+ * (with retry_after_s from Retry-After / x-ratelimit-reset-*), spent quota or credits → BUDGET_EXHAUSTED, a
+ * rejected key, 5xx, network and anything else → INTERNAL with a generic message.
+ */
 export function mapAgentError(e: unknown): Omit<ErrorEvent, 'type'> {
+  if (e instanceof LlmProviderError) {
+    if (isQuotaExhausted(e)) return { code: 'BUDGET_EXHAUSTED', message: BUDGET_MESSAGE };
+    if (e.kind === 'http' && e.status === 429) return rateLimited(llmRetryAfterSeconds(e));
+    return { code: 'INTERNAL', message: INTERNAL_MESSAGE };
+  }
   if (e instanceof Anthropic.APIError) {
     if (e.status === 400 && /usage limit/i.test(e.message)) {
-      return {
-        code: 'BUDGET_EXHAUSTED',
-        message:
-          'The demo has used its AI budget for now; the Tools explorer still works without an LLM.',
-      };
+      return { code: 'BUDGET_EXHAUSTED', message: BUDGET_MESSAGE };
     }
     if (e.status === 429) {
       const headers: unknown = e.headers;
       const raw = headers instanceof Headers ? headers.get('retry-after') : null;
-      const retry = raw ? Number(raw) : Number.NaN;
-      return {
-        code: 'RATE_LIMITED',
-        message: 'The AI model is busy right now; try again shortly.',
-        ...(Number.isFinite(retry) && retry > 0 ? { retry_after_s: Math.ceil(retry) } : {}),
-      };
+      return rateLimited(raw ? Number(raw) : null);
     }
   }
-  return { code: 'INTERNAL', message: 'The agent hit an unexpected error. Please try again.' };
+  return { code: 'INTERNAL', message: INTERNAL_MESSAGE };
 }
 
 export interface PlaygroundRouteDeps {
@@ -86,9 +120,8 @@ export function registerPlaygroundRoute(app: FastifyInstance, deps: PlaygroundRo
       if (!finished) controller.abort();
     });
 
-    const anthropicFactory = ctx.anthropic;
-    const enabled = env.MB_PLAYGROUND_ENABLED && anthropicFactory !== null;
-    if (!enabled || !anthropicFactory) {
+    const llm = ctx.llm;
+    if (!env.MB_PLAYGROUND_ENABLED || !llm) {
       return apiError(reply, 503, {
         code: 'PLAYGROUND_DISABLED',
         message: PLAYGROUND_DISABLED_MESSAGE,
@@ -168,7 +201,8 @@ export function registerPlaygroundRoute(app: FastifyInstance, deps: PlaygroundRo
       });
     }
 
-    const model = env.MB_PLAYGROUND_MODEL;
+    const model = llm.model;
+    const runAgent = createAgentRunner(llm);
     copyReplyHeadersToRaw(reply);
     reply.hijack();
     const sse = new SseStream(reply.raw);
@@ -185,8 +219,6 @@ export function registerPlaygroundRoute(app: FastifyInstance, deps: PlaygroundRo
         message: body.message,
         session: body.session_id,
         faults: body.faults,
-        model,
-        anthropic: anthropicFactory(),
         mcpHandler: deps.demoHandler,
         onEvent: (e) => sse.send(e),
         signal: controller.signal,
@@ -194,6 +226,8 @@ export function registerPlaygroundRoute(app: FastifyInstance, deps: PlaygroundRo
       request.log.info(
         {
           playground: true,
+          provider: llm.provider,
+          model,
           stop_reason: result.stopReason,
           tool_calls: result.toolCalls.length,
           input_tokens: result.inputTokens,
@@ -207,15 +241,19 @@ export function registerPlaygroundRoute(app: FastifyInstance, deps: PlaygroundRo
         request.log.info({ playground: true }, 'playground run aborted (client disconnected)');
       } else {
         const mapped = mapAgentError(e);
+        const keyRejected = isLlmKeyRejected(e);
+        // Messages are logged only for errors that cannot echo the key (LlmProviderError bodies are scrubbed and
+        // dropped for 401/403; Anthropic's own auth errors are not logged verbatim either).
         request.log.error(
           {
             playground: true,
+            provider: llm.provider,
             code: mapped.code,
             err_name: e instanceof Error ? e.name : typeof e,
-            status: e instanceof Anthropic.APIError ? e.status : undefined,
-            msg: e instanceof Error ? e.message.slice(0, 300) : undefined,
+            status: llmErrorStatus(e),
+            msg: e instanceof Error && !keyRejected ? e.message.slice(0, 300) : undefined,
           },
-          'playground run failed',
+          keyRejected ? 'LLM provider rejected the key' : 'playground run failed',
         );
         sse.send({ type: 'error', ...mapped });
       }

@@ -1,6 +1,7 @@
 /**
  * `pnpm evals`: runs every eval case through the playground engine on each model and writes
- * evals/reports/<run>-<model>.json + evals/reports/latest.md. Skips (exit 0) when ANTHROPIC_API_KEY is unset.
+ * evals/reports/<run>-<model>.json + evals/reports/latest.md. Skips (exit 0) when the selected provider's key
+ * (MB_LLM_API_KEY for the free OpenAI-compatible default, ANTHROPIC_API_KEY for anthropic) is unset.
  */
 import { main } from './cli';
 
@@ -12,11 +13,12 @@ main(process.argv.slice(2), process.env, { signal: controller.signal })
     process.exitCode = code;
   })
   .catch((e: unknown) => {
-    // Never echo request details: the Anthropic client config holds the key.
+    // Never echo request details: the LLM client config holds the key.
     const name = e instanceof Error ? e.constructor.name : typeof e;
-    const message = e instanceof Error ? e.message : String(e);
-    const key = process.env.ANTHROPIC_API_KEY;
-    const safe = key && key.length >= 8 ? message.split(key).join('[redacted]') : message;
+    let safe = e instanceof Error ? e.message : String(e);
+    for (const key of [process.env.ANTHROPIC_API_KEY, process.env.MB_LLM_API_KEY]) {
+      if (key && key.length >= 8) safe = safe.split(key).join('[redacted]');
+    }
     process.stderr.write(`evals: crashed: ${name}: ${safe.slice(0, 500)}\n`);
     process.exitCode = 1;
   });

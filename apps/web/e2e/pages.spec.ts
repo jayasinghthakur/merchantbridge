@@ -57,6 +57,16 @@ test('tool explorer shows an error state with retry when the API is down', async
   await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
 });
 
+test('docs keeps a Claude model in the Messages API snippet whatever the playground runs', async ({
+  page,
+}) => {
+  await mockApi(page, { status: { model: 'llama-3.3-70b-versatile' } });
+  await page.goto('/docs');
+  const snippet = page.getByTestId('docs-messages-api');
+  await expect(snippet).toContainText('"model": "claude-haiku-4-5"');
+  await expect(snippet).not.toContainText('llama');
+});
+
 test('docs falls back to the static tool table', async ({ page }) => {
   await mockApi(page, { tools: 'error' });
   await page.goto('/docs');

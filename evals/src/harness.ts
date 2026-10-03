@@ -1,12 +1,21 @@
 import { randomBytes } from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
-import type { AgentToolCall, FetchHandler } from '@mb/api';
-import { createAppContext, createAppParts, loadConfig, runAgent } from '@mb/api';
+import type { AgentToolCall, FetchHandler, LlmConnection } from '@mb/api';
+import {
+  LlmProviderError,
+  createAgentRunner,
+  createAppContext,
+  createAppParts,
+  loadConfig,
+} from '@mb/api';
 import type { TraceEvent } from '@mb/core';
 import type { CaseRun, CaseRunError, ObservedToolCall } from './assertions';
 import type { EvalCase } from './case';
 
-/** Engine settings. Same loop as the playground (`runAgent`); max_tokens is raised so Sonnet's adaptive thinking fits. */
+/**
+ * Engine settings. Same loops as the playground (`runAgent` on Anthropic, `runAgentOpenAI` on an OpenAI-compatible
+ * provider); max_tokens is raised so Sonnet's adaptive thinking fits.
+ */
 export const ENGINE_DEFAULTS = { maxTokens: 4096, maxIterations: 6 } as const;
 
 export interface DemoEndpoint {
@@ -27,8 +36,8 @@ const blockedFetch: typeof fetch = (input) =>
 
 /**
  * Builds the demo MCP endpoint exactly as apps/api serves it, from an explicit minimal config: no database, no
- * Redis, no Zoho credentials, no Anthropic key (the agent's client is passed to `runAgent` separately). Nothing
- * is read from process.env here, so a live tenant can never be reached (golden rule 6).
+ * Redis, no Zoho credentials, no LLM key (the agent's model connection is passed to `runCase` separately).
+ * Nothing is read from process.env here, so a live tenant can never be reached (golden rule 6).
  */
 export async function createDemoEndpoint(): Promise<DemoEndpoint> {
   const ctx = await createAppContext(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' }), {
@@ -52,10 +61,11 @@ export function sessionIdFor(
   suffix = randomBytes(3).toString('hex'),
 ): string {
   const slug = (s: string) => s.replace(/[^A-Za-z0-9_-]+/g, '-');
-  const id = `ev-${slug(model).replace(/^claude-/, '')}-${slug(caseId)}`.slice(
-    0,
-    64 - suffix.length - 1,
-  );
+  const id =
+    `ev-${slug(model.split('/').pop() ?? model).replace(/^claude-/, '')}-${slug(caseId)}`.slice(
+      0,
+      64 - suffix.length - 1,
+    );
   return `${id}-${suffix}`;
 }
 
@@ -65,7 +75,12 @@ export function describeError(e: unknown, secrets: readonly string[] = []): Case
   for (const s of secrets) if (s.length >= 8) message = message.split(s).join('[redacted]');
   return {
     name: e instanceof Error ? e.constructor.name : typeof e,
-    status: e instanceof Anthropic.APIError && typeof e.status === 'number' ? e.status : null,
+    status:
+      e instanceof Anthropic.APIError && typeof e.status === 'number'
+        ? e.status
+        : e instanceof LlmProviderError && e.status > 0
+          ? e.status
+          : null,
     message: message.slice(0, 500),
   };
 }
@@ -93,7 +108,8 @@ function callsFromTrace(events: readonly TraceEvent[]): ObservedToolCall[] {
 
 export interface RunCaseOptions {
   model: string;
-  anthropic: Anthropic;
+  /** Anthropic client or OpenAI-compatible endpoint + key (see `createAgentRunner` in @mb/api). */
+  llm: LlmConnection;
   endpoint: Pick<DemoEndpoint, 'handler'>;
   maxTokens?: number;
   maxIterations?: number;
@@ -112,12 +128,11 @@ export async function runCase(c: EvalCase, opts: RunCaseOptions): Promise<CaseRu
   const started = Date.now();
   const base = { caseId: c.id, model: opts.model, session };
   try {
+    const runAgent = createAgentRunner({ ...opts.llm, model: opts.model });
     const r = await runAgent({
       message: c.prompt,
       session,
       faults: [],
-      model: opts.model,
-      anthropic: opts.anthropic,
       mcpHandler: opts.endpoint.handler,
       onEvent: (e) => {
         events.push(e);

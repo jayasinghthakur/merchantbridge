@@ -43,8 +43,9 @@ export function createAppParts(ctx: AppContext): AppParts {
   };
 }
 
+/** Kill switch on and the selected LLM provider (openai-compatible or anthropic) has its key. */
 export function playgroundEnabled(ctx: AppContext): boolean {
-  return ctx.config.env.MB_PLAYGROUND_ENABLED && ctx.anthropic !== null;
+  return ctx.config.env.MB_PLAYGROUND_ENABLED && ctx.llm !== null;
 }
 
 export function publicTools(runtime: ToolRuntime): PublicToolDescriptor[] {
@@ -98,7 +99,8 @@ function bearerMatches(header: string | undefined, expected: string): boolean {
 /**
  * Builds the single Fastify deployable. Fastify is constructed directly (not createMcpFastifyApp, which accepts
  * no logger/trustProxy options) and the SDK's `hostHeaderValidation` hook is added for every route except
- * /health/* (platform health checks may use an internal Host).
+ * /health/* and the bare `/` (platform health/readiness checks, e.g. Hugging Face Spaces probing `/`, may use an
+ * internal Host; both only return static, non-sensitive JSON).
  */
 export async function buildApp(
   ctx: AppContext,
@@ -145,7 +147,7 @@ export async function buildApp(
     if (path.startsWith('/oauth/') || path === API_ROUTES.playground) {
       reply.header('cache-control', 'no-store');
     }
-    if (path.startsWith('/health/')) return;
+    if (path === '/' || path.startsWith('/health/')) return;
     await hostCheck(request, reply);
   });
 
@@ -180,6 +182,12 @@ export async function buildApp(
   });
 
   // ---- health ----
+  // Hosts such as Hugging Face Spaces treat a 2xx on `/` as "ready"; it only names the service.
+  app.get('/', () => ({
+    service: 'merchantbridge-api',
+    version: ctx.version,
+    docs: API_ROUTES.status,
+  }));
   app.get(API_ROUTES.healthLive, () => ({ ok: true }));
   // /health/ready is public and unauthenticated: coalesce probes so a flood costs at most one Redis PING and one
   // Postgres query per READY_TTL_MS (both pings resolve false on failure; they never reject).
@@ -207,7 +215,7 @@ export async function buildApp(
   app.get(API_ROUTES.status, (): StatusResponse => ({
     version: ctx.version,
     playground_enabled: playgroundEnabled(ctx),
-    model: config.env.MB_PLAYGROUND_MODEL,
+    model: ctx.llm?.model ?? ctx.llmSettings.model,
     demo_mcp_url: `${config.env.MB_PUBLIC_API_URL.replace(/\/+$/, '')}${API_ROUTES.mcpDemo}`,
     tool_count: parts.runtime.listTools().length,
     turnstile_site_key: config.env.TURNSTILE_SITE_KEY ?? null,

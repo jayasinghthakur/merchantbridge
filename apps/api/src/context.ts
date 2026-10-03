@@ -18,13 +18,15 @@ import {
 } from '@mb/db';
 import { createCache, createGovernor } from '@mb/governor';
 import type { DemoDataset } from '@mb/zoho-inventory';
-import type { AppConfig } from './config';
+import type { AppConfig, LlmSettings } from './config';
+import { resolveLlmSettings } from './config';
 import { DemoFakes, createDemoDatasetProvider } from './demo';
 import type { AppLogger } from './infra/logger';
 import { createLogger, toCoreLogger } from './infra/logger';
 import { RedisKv } from './infra/redis-kv';
 import type { Metrics } from './metrics';
 import { createMetrics } from './metrics';
+import type { LlmRuntime } from './playground/provider';
 import type { UsageEmitter } from './usage';
 import { createUsageEmitter } from './usage';
 import { API_VERSION } from './version';
@@ -43,8 +45,10 @@ export interface AuthPieces {
 export interface AppContextOverrides {
   /** All outbound Zoho + Zoho Accounts (+ Turnstile) traffic. Tests pass a fake; never real network in tests. */
   fetch?: typeof fetch;
-  /** Factory for the Anthropic client used by the playground. */
+  /** Factory for the Anthropic client used by the playground (selects the anthropic provider when none is set). */
   anthropic?: () => Anthropic;
+  /** Transport for the OpenAI-compatible LLM provider. Defaults to `fetch` (so tests never reach the network). */
+  llmFetch?: typeof fetch;
   clock?: Clock;
   kv?: Kv;
   stores?: MbStores;
@@ -72,8 +76,12 @@ export interface AppContext {
   demoFakes: DemoFakes;
   usage: UsageEmitter;
   metrics: Metrics;
-  /** Null when the playground has no API key (or an override) configured. */
+  /** Null when no Anthropic key (or override) is configured; used only by the anthropic provider. */
   anthropic: (() => Anthropic) | null;
+  /** The playground's LLM settings after provider selection (model, provider, base URL; no secrets). */
+  llmSettings: LlmSettings;
+  /** The playground's model connection; null when the selected provider has no key (playground disabled). */
+  llm: LlmRuntime | null;
   /** Readiness probes for /health/ready. */
   pingKv(): Promise<boolean>;
   pingStore(): Promise<boolean>;
@@ -205,6 +213,24 @@ export async function createAppContext(
     };
   }
 
+  // Provider selection (config.ts): explicit MB_LLM_PROVIDER, else MB_LLM_API_KEY → openai, else Anthropic.
+  const llmSettings =
+    config.llm.provider === null && overrides.anthropic
+      ? resolveLlmSettings(config.env, 'anthropic')
+      : config.llm;
+  let llm: LlmRuntime | null = null;
+  if (llmSettings.provider === 'openai' && config.env.MB_LLM_API_KEY) {
+    llm = {
+      provider: 'openai',
+      model: llmSettings.model,
+      baseUrl: llmSettings.baseUrl,
+      apiKey: config.env.MB_LLM_API_KEY,
+      fetch: overrides.llmFetch ?? outboundFetch,
+    };
+  } else if (llmSettings.provider === 'anthropic' && anthropic) {
+    llm = { provider: 'anthropic', model: llmSettings.model, anthropic };
+  }
+
   let closed = false;
   return {
     config,
@@ -225,6 +251,8 @@ export async function createAppContext(
     usage,
     metrics,
     anthropic,
+    llmSettings,
+    llm,
     async pingKv() {
       try {
         if (redis) return await redis.ping();

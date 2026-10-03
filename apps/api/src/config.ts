@@ -20,6 +20,24 @@ const optionalString = z
   .optional()
   .transform((v) => (v && v.trim() !== '' ? v.trim() : undefined));
 
+export const LLM_PROVIDERS = ['openai', 'anthropic'] as const;
+export type LlmProviderName = (typeof LLM_PROVIDERS)[number];
+
+/** Groq's free tier (OpenAI-compatible). Gemini's OpenAI endpoint, OpenRouter or a local Ollama also work. */
+export const DEFAULT_LLM_BASE_URL = 'https://api.groq.com/openai/v1';
+
+/** Playground model when MB_PLAYGROUND_MODEL is unset, per provider. */
+export const DEFAULT_PLAYGROUND_MODELS: Readonly<Record<LlmProviderName, string>> = {
+  openai: 'llama-3.3-70b-versatile',
+  anthropic: 'claude-haiku-4-5',
+};
+
+const optionalProvider = optionalString
+  .transform((v) => v?.toLowerCase())
+  .pipe(z.enum(LLM_PROVIDERS).optional());
+
+const optionalUrl = optionalString.pipe(z.string().url().optional());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8787),
@@ -44,8 +62,18 @@ const envSchema = z.object({
   ZOHO_CLIENT_SECRET: optionalString,
   ZOHO_REDIRECT_URI: optionalString,
   ANTHROPIC_API_KEY: optionalString,
+  /**
+   * LLM behind the playground: 'openai' (any OpenAI-compatible Chat Completions API; free tiers work) or
+   * 'anthropic'. Default: 'openai' when MB_LLM_API_KEY is set, else 'anthropic' when ANTHROPIC_API_KEY is set.
+   */
+  MB_LLM_PROVIDER: optionalProvider,
+  /** OpenAI-compatible base URL (default Groq). Ollama: http://localhost:11434/v1 */
+  MB_LLM_BASE_URL: optionalUrl,
+  /** Key for the OpenAI-compatible provider (Groq keys start with gsk_). Never logged. */
+  MB_LLM_API_KEY: optionalString,
   MB_PLAYGROUND_ENABLED: bool,
-  MB_PLAYGROUND_MODEL: z.string().default('claude-haiku-4-5'),
+  /** Model id; default per provider (DEFAULT_PLAYGROUND_MODELS). */
+  MB_PLAYGROUND_MODEL: optionalString,
   /** Global cap on playground questions per UTC day. */
   MB_PLAYGROUND_DAILY_CAP: z.coerce.number().int().positive().default(300),
   TURNSTILE_SECRET_KEY: optionalString,
@@ -67,12 +95,58 @@ export type ClientIpSource = 'socket' | 'fly-client-ip' | 'xff-last';
 
 export type Env = z.infer<typeof envSchema>;
 
+/** The LLM the playground would use. Secrets stay in `env`; this only says whether the key is there. */
+export interface LlmSettings {
+  /** Null when neither MB_LLM_PROVIDER nor any provider key is set. */
+  provider: LlmProviderName | null;
+  model: string;
+  /** OpenAI-compatible base URL without a trailing slash (unused by the anthropic provider). */
+  baseUrl: string;
+  /** The selected provider's key is configured. */
+  hasKey: boolean;
+}
+
+/**
+ * Provider selection: an explicit MB_LLM_PROVIDER wins; otherwise 'openai' when MB_LLM_API_KEY is set, else
+ * 'anthropic' when ANTHROPIC_API_KEY is set, else `fallback` (the app context passes 'anthropic' when a test
+ * injects an Anthropic client), else none.
+ */
+export function resolveLlmSettings(
+  env: Pick<
+    Env,
+    | 'MB_LLM_PROVIDER'
+    | 'MB_LLM_API_KEY'
+    | 'MB_LLM_BASE_URL'
+    | 'ANTHROPIC_API_KEY'
+    | 'MB_PLAYGROUND_MODEL'
+  >,
+  fallback: LlmProviderName | null = null,
+): LlmSettings {
+  const provider: LlmProviderName | null =
+    env.MB_LLM_PROVIDER ??
+    (env.MB_LLM_API_KEY ? 'openai' : env.ANTHROPIC_API_KEY ? 'anthropic' : fallback);
+  const hasKey =
+    provider === 'openai'
+      ? Boolean(env.MB_LLM_API_KEY)
+      : provider === 'anthropic'
+        ? Boolean(env.ANTHROPIC_API_KEY)
+        : false;
+  return {
+    provider,
+    model: env.MB_PLAYGROUND_MODEL ?? DEFAULT_PLAYGROUND_MODELS[provider ?? 'openai'],
+    baseUrl: (env.MB_LLM_BASE_URL ?? DEFAULT_LLM_BASE_URL).replace(/\/+$/, ''),
+    hasKey,
+  };
+}
+
 export interface AppConfig {
   env: Env;
   isProd: boolean;
   /** Real Zoho OAuth is configured (otherwise /connect is disabled). */
   connectEnabled: boolean;
+  /** MB_PLAYGROUND_ENABLED and the selected LLM provider has its key. */
   playgroundEnabled: boolean;
+  llm: LlmSettings;
   allowedHosts: string[];
   corsOrigins: string[];
   clientIpSource: ClientIpSource;
@@ -109,11 +183,14 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
   const allowedHosts = [...new Set([apiHost, 'localhost', '127.0.0.1', ...env.MB_ALLOWED_HOSTS])];
   const corsOrigins = [...new Set([env.MB_PUBLIC_WEB_URL, ...env.MB_CORS_ORIGINS])];
 
+  const llm = resolveLlmSettings(env);
+
   return {
     env,
     isProd,
     connectEnabled,
-    playgroundEnabled: env.MB_PLAYGROUND_ENABLED && Boolean(env.ANTHROPIC_API_KEY),
+    playgroundEnabled: env.MB_PLAYGROUND_ENABLED && llm.hasKey,
+    llm,
     allowedHosts,
     corsOrigins,
     clientIpSource: env.MB_CLIENT_IP_SOURCE ?? (env.FLY_APP_NAME ? 'fly-client-ip' : 'socket'),

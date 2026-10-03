@@ -22,7 +22,7 @@ export type ScriptedTurn =
   | { kind: 'tools'; calls: ScriptedToolCall[]; text?: string }
   /** The final answer; may be computed from the tool results seen so far. */
   | { kind: 'text'; text: string | ((ctx: ScriptContext) => string); stopReason?: string }
-  | { kind: 'error'; status: number; body: unknown };
+  | { kind: 'error'; status: number; body: unknown; headers?: Record<string, string> };
 
 /** A fixed script, or one chosen per conversation from its first user message and the requested model. */
 export type Script =
@@ -137,7 +137,7 @@ export function scriptedAnthropic(script: Script) {
     if (turn.kind === 'error') {
       return new Response(JSON.stringify(turn.body), {
         status: turn.status,
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...turn.headers },
       });
     }
     let blocks: Block[];

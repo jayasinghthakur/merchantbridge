@@ -6,41 +6,42 @@ import type {
   MCPToolLike,
 } from '@anthropic-ai/sdk/helpers/beta/mcp';
 import { mcpTool } from '@anthropic-ai/sdk/helpers/beta/mcp';
-import type { CallToolResult, Client } from '@modelcontextprotocol/client';
-import type { DemoFault, ErrorCode, GovernorDecision, TraceEvent } from '@mb/core';
-import { ERROR_CODES } from '@mb/core';
+import type { CallToolResult } from '@modelcontextprotocol/client';
+import type { DemoFault, TraceEvent } from '@mb/core';
 import type { FetchHandler } from '../inprocess';
 import { connectInProcess } from '../inprocess';
-import type { TraceMeta } from '../mcp';
-import { TRACE_META_KEY } from '../mcp';
 import { API_VERSION } from '../version';
 import { SYSTEM_PROMPT } from './prompt';
+import type { AgentToolCall, ToolBudget, TraceContext } from './trace';
+import {
+  DEFAULT_MAX_INPUT_TOKENS,
+  DEFAULT_MAX_TOOL_CALLS,
+  demoMcpHeaders,
+  safeEmitter,
+  tracedCall,
+} from './trace';
+
+export type { AgentToolCall } from './trace';
+export { DEFAULT_MAX_INPUT_TOKENS, DEFAULT_MAX_TOOL_CALLS } from './trace';
 
 type RunnableTool = ReturnType<typeof mcpTool>;
 
-export interface AgentToolCall {
-  call_id: string;
-  tool: string;
-  args: Record<string, unknown>;
-  is_error: boolean;
-  error_code: ErrorCode | null;
-}
-
-export interface RunAgentOptions {
+/** Options shared by every engine (Anthropic and OpenAI-compatible). */
+export interface AgentRunOptions {
   message: string;
   /** Demo session id (`X-MB-Session`): scopes governor, cache and fault state. */
   session: string;
   faults: readonly DemoFault[];
-  model: string;
-  anthropic: Anthropic;
   /** The DEMO MCP handler; the agent never talks to the live endpoint. */
   mcpHandler: FetchHandler;
   onEvent: (event: TraceEvent) => void;
   signal?: AbortSignal;
+  /** Model requests per question (default 6). */
   maxIterations?: number;
+  /** Output-token cap per model request (default 1024). */
   maxTokens?: number;
   /**
-   * Tool calls allowed per question (default 10). Calls past it never reach MCP; the model gets an is_error result
+   * Tool calls allowed per question (default 10). Calls past it never reach MCP; the model gets an error result
    * telling it to answer with what it has. Bounds parallel-call fan-out (each result can be ~10K tokens and is
    * re-sent on every later request).
    */
@@ -52,8 +53,10 @@ export interface RunAgentOptions {
   maxInputTokens?: number;
 }
 
-export const DEFAULT_MAX_TOOL_CALLS = 10;
-export const DEFAULT_MAX_INPUT_TOKENS = 120_000;
+export interface RunAgentOptions extends AgentRunOptions {
+  model: string;
+  anthropic: Anthropic;
+}
 
 export interface RunAgentResult {
   stopReason: string;
@@ -62,36 +65,6 @@ export interface RunAgentResult {
   outputTokens: number;
   durationMs: number;
   finalText: string;
-}
-
-const MAX_RESULT_PREVIEW_CHARS = 6_000;
-
-function isErrorCode(v: unknown): v is ErrorCode {
-  return typeof v === 'string' && (ERROR_CODES as readonly string[]).includes(v);
-}
-
-function traceOf(result: CallToolResult | undefined): Partial<TraceMeta> {
-  const meta = result?._meta;
-  const trace = meta?.[TRACE_META_KEY];
-  return typeof trace === 'object' && trace !== null ? trace : {};
-}
-
-function errorCodeOf(structured: unknown): ErrorCode | null {
-  const code = (structured as { error?: { code?: unknown } } | undefined)?.error?.code;
-  return isErrorCode(code) ? code : null;
-}
-
-function cachedOf(structured: unknown, trace: Partial<TraceMeta>): boolean {
-  const cached = (structured as { meta?: { cached?: unknown } } | undefined)?.meta?.cached;
-  return cached === true || (trace.cache_hits ?? 0) > 0;
-}
-
-/** structuredContent for the trace pane, cut down when large. */
-function displayResult(structured: unknown): unknown {
-  if (structured === undefined) return null;
-  const text = JSON.stringify(structured);
-  if (text.length <= MAX_RESULT_PREVIEW_CHARS) return structured;
-  return { truncated: true, preview: text.slice(0, MAX_RESULT_PREVIEW_CHARS) };
 }
 
 /** MCP inputSchema → Anthropic input_schema without the `$schema` dialect marker. */
@@ -121,97 +94,28 @@ const unusedClient: MCPClientLike = {
   callTool: () => Promise.reject(new Error('not used')),
 };
 
-interface ToolBudget {
-  used: number;
-  readonly max: number;
-}
-
-/** Wraps one MCP tool so every call emits tool_call / tool_result trace events with the governor decisions. */
-function tracedTool(
-  def: MCPToolLike,
-  mcp: Client,
-  emit: (e: TraceEvent) => void,
-  calls: AgentToolCall[],
-  signal: AbortSignal | undefined,
-  budget: ToolBudget,
-): RunnableTool {
+/**
+ * Wraps one MCP tool so every call goes through the shared traced call path; the SDK's `mcpTool` then turns the
+ * already-fetched MCP result into tool_result content (is_error results throw a ToolError, as before).
+ */
+function tracedTool(def: MCPToolLike, trace: TraceContext): RunnableTool {
   const base = mcpTool(def, unusedClient);
   return {
     ...base,
     run: async (args, context) => {
-      const callId = context?.toolUse.id ?? randomUUID();
       const input = args ?? {};
-      emit({ type: 'tool_call', call_id: callId, tool: def.name, args: input });
-      if (budget.used >= budget.max) {
-        // Counted synchronously, so parallel tool_use blocks in one turn cannot overshoot the cap.
-        const message = `The tool-call budget for this question is used up (${budget.max} calls); answer with the results you already have.`;
-        emit({
-          type: 'tool_result',
-          call_id: callId,
-          tool: def.name,
-          is_error: true,
-          error_code: null,
-          duration_ms: 0,
-          cached: false,
-          upstream_calls: 0,
-          retries: 0,
-          decisions: [],
-          budget_remaining_today: null,
-          result: { error: { message } },
-        });
-        calls.push({
-          call_id: callId,
-          tool: def.name,
-          args: input,
-          is_error: true,
-          error_code: null,
-        });
-        throw new Error(message); // the runner sends it back as an is_error tool_result
-      }
-      budget.used += 1;
-      const started = Date.now();
-      let raw: CallToolResult | undefined;
-      const capture: MCPClientLike = {
-        callTool: async (params) => {
-          raw = await mcp.callTool(params, signal ? { signal } : undefined);
-          return toResultLike(raw);
-        },
+      const outcome = await tracedCall(trace, {
+        callId: context?.toolUse.id ?? randomUUID(),
+        tool: def.name,
+        args: input,
+      });
+      // The runner sends a thrown error back to the model as an is_error tool_result.
+      if (outcome.kind === 'budget_exhausted') throw new Error(outcome.message);
+      if (outcome.kind === 'failed') throw outcome.error;
+      const replay: MCPClientLike = {
+        callTool: () => Promise.resolve(toResultLike(outcome.result)),
       };
-      try {
-        return await mcpTool(def, capture).run(input, context);
-      } finally {
-        const trace = traceOf(raw);
-        const structured = raw?.structuredContent;
-        const isError = raw === undefined || raw.isError === true;
-        const errorCode = errorCodeOf(structured);
-        const decisions: GovernorDecision[] = Array.isArray(trace.decisions) ? trace.decisions : [];
-        const budgetFromMeta = (
-          structured as { meta?: { budget_remaining_today?: unknown } } | undefined
-        )?.meta?.budget_remaining_today;
-        emit({
-          type: 'tool_result',
-          call_id: callId,
-          tool: def.name,
-          is_error: isError,
-          error_code: errorCode,
-          duration_ms: Date.now() - started,
-          cached: cachedOf(structured, trace),
-          upstream_calls: trace.upstream_calls ?? 0,
-          retries: trace.retries ?? 0,
-          decisions,
-          budget_remaining_today:
-            trace.budget_remaining_today ??
-            (typeof budgetFromMeta === 'number' ? budgetFromMeta : null),
-          result: displayResult(structured),
-        });
-        calls.push({
-          call_id: callId,
-          tool: def.name,
-          args: input,
-          is_error: isError,
-          error_code: errorCode,
-        });
-      }
+      return mcpTool(def, replay).run(input, context);
     },
   };
 }
@@ -227,20 +131,12 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   const maxTokens = opts.maxTokens ?? 1024;
   const maxInputTokens = opts.maxInputTokens ?? DEFAULT_MAX_INPUT_TOKENS;
   const budget: ToolBudget = { used: 0, max: opts.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS };
-  const emit = (e: TraceEvent): void => {
-    try {
-      opts.onEvent(e);
-    } catch {
-      // a broken listener must not break the run
-    }
-  };
+  const emit = safeEmitter(opts.onEvent);
   opts.signal?.throwIfAborted();
 
-  const headers: Record<string, string> = { 'x-mb-session': opts.session };
-  if (opts.faults.length > 0) headers['x-mb-faults'] = [...opts.faults].join(',');
   const mcp = await connectInProcess({
     handler: opts.mcpHandler,
-    headers,
+    headers: demoMcpHeaders(opts.session, opts.faults),
     clientName: 'merchantbridge-playground',
     clientVersion: API_VERSION,
   });
@@ -248,16 +144,13 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   try {
     const { tools } = await mcp.listTools();
     const toolCalls: AgentToolCall[] = [];
+    const trace: TraceContext = { mcp, emit, calls: toolCalls, signal: opts.signal, budget };
     const runnable = tools.map((t) =>
       tracedTool(
         toToolLike(
           t as { name: string; description?: string; inputSchema: Record<string, unknown> },
         ),
-        mcp,
-        emit,
-        toolCalls,
-        opts.signal,
-        budget,
+        trace,
       ),
     );
 

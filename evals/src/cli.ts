@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Anthropic from '@anthropic-ai/sdk';
+import type { LlmConnection, LlmProviderName } from '@mb/api';
+import { DEFAULT_LLM_BASE_URL, LLM_PROVIDERS } from '@mb/api';
 import { ALL_CASES } from '../cases/index';
 import type { CaseRun } from './assertions';
 import { evaluateCase } from './assertions';
@@ -11,7 +13,7 @@ import { ENGINE_DEFAULTS, createDemoEndpoint, runCase } from './harness';
 import type { CaseResult, EngineInfo, ModelReport } from './report';
 import {
   DEFAULT_MODELS,
-  GATES,
+  PRIMARY_GATE,
   buildModelReport,
   caseResult,
   gateExitCode,
@@ -23,37 +25,77 @@ import {
 } from './report';
 
 export const DEFAULT_REPORTS_DIR = fileURLToPath(new URL('../reports/', import.meta.url));
-export const DEFAULT_DELAY_MS = 1_000;
 
-export const SKIP_MESSAGE = [
-  'evals: ANTHROPIC_API_KEY is not set, so no evals were run (no model calls were made, no reports written).',
-  '       To run them: export ANTHROPIC_API_KEY in your shell, then `pnpm evals` (optionally',
-  `       --models ${DEFAULT_MODELS.join(',')}). The offline harness tests run with \`pnpm --filter @mb/evals test\`.`,
-].join('\n');
+/**
+ * Pause between cases. The OpenAI-compatible default (Groq's free tier, ~30 requests/min and a per-minute token
+ * window) needs more room than Anthropic; a case makes 1-6 model requests.
+ */
+export const DEFAULT_DELAY_MS: Readonly<Record<LlmProviderName, number>> = {
+  openai: 2_500,
+  anthropic: 1_000,
+};
+
+/** Env var holding each provider's key. */
+export const KEY_VARS: Readonly<Record<LlmProviderName, string>> = {
+  openai: 'MB_LLM_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY',
+};
+
+/** Engine retries for the OpenAI-compatible provider: ride out per-minute free-tier windows (Retry-After ≤ 65 s). */
+export const OPENAI_EVAL_RETRY = {
+  maxRetries: 4,
+  maxRetryDelayMs: 65_000,
+  timeoutMs: 120_000,
+} as const;
+
+/** What `pnpm evals` prints (exit 0) when the selected provider has no key. */
+export function skipMessage(provider: LlmProviderName | null): string {
+  const why =
+    provider === null
+      ? 'no LLM key is set (MB_LLM_API_KEY or ANTHROPIC_API_KEY)'
+      : `${KEY_VARS[provider]} is not set (provider: ${provider})`;
+  return [
+    `evals: ${why}, so no evals were run (no model calls were made, no reports written).`,
+    `       Free: export MB_LLM_API_KEY=<a Groq key, gsk_...> then \`pnpm evals\` (provider openai, default model`,
+    `       ${DEFAULT_MODELS.openai.join(',')}; --base-url for Gemini/OpenRouter/Ollama). Or export ANTHROPIC_API_KEY`,
+    `       and run \`pnpm evals -- --provider anthropic\`. The offline harness tests run with \`pnpm --filter @mb/evals test\`.`,
+  ].join('\n');
+}
+
+export const SKIP_MESSAGE = skipMessage(null);
 
 export const USAGE = `Usage: pnpm evals [-- options]
 
-Runs the ${ALL_CASES.length} MerchantBridge evals through the playground agent loop (runAgent) against the
-in-process demo MCP endpoint, once per model, sequentially. Needs ANTHROPIC_API_KEY in the environment.
+Runs the ${ALL_CASES.length} MerchantBridge evals through the playground agent loop against the in-process demo MCP
+endpoint, once per model, sequentially. Needs MB_LLM_API_KEY (openai provider, free tiers work) or
+ANTHROPIC_API_KEY (anthropic provider) in the environment.
 
 Options:
-  --models <a,b>     Models to run (default: ${DEFAULT_MODELS.join(',')})
+  --provider <p>     openai | anthropic (default: MB_LLM_PROVIDER, else openai when MB_LLM_API_KEY is set,
+                     else anthropic when ANTHROPIC_API_KEY is set)
+  --base-url <url>   OpenAI-compatible base URL (default: MB_LLM_BASE_URL, else ${DEFAULT_LLM_BASE_URL})
+  --models <a,b>     Models to run; the first is gated at ${pct(PRIMARY_GATE)} (default: openai ${DEFAULT_MODELS.openai.join(
+    ',',
+  )}; anthropic ${DEFAULT_MODELS.anthropic.join(',')})
   --cases <a,b>      Only these case ids (default: all)
-  --delay-ms <n>     Pause between cases in ms (default: ${DEFAULT_DELAY_MS})
+  --delay-ms <n>     Pause between cases in ms (default: openai ${DEFAULT_DELAY_MS.openai}, anthropic ${DEFAULT_DELAY_MS.anthropic})
   --max-tokens <n>   max_tokens per model request (default: ${ENGINE_DEFAULTS.maxTokens})
   --out <dir>        Reports directory (default: evals/reports)
   -h, --help         Show this help
 
-Exit codes: 0 ok (or skipped: no key) · 1 a gated model scored below its threshold (${Object.entries(
-  GATES,
-)
-  .map(([m, r]) => `${m} < ${pct(r)}`)
-  .join(', ')}) or the API key was rejected · 2 bad arguments · 130 interrupted.`;
+Exit codes: 0 ok (or skipped: no key) · 1 the first model scored below ${pct(PRIMARY_GATE)} or the API key was
+rejected · 2 bad arguments · 130 interrupted.`;
 
 export interface CliOptions {
-  models: string[];
+  /** Null = from the environment (see USAGE). */
+  provider: LlmProviderName | null;
+  /** Null = MB_LLM_BASE_URL or the Groq default. */
+  baseUrl: string | null;
+  /** Null = the provider's DEFAULT_MODELS. */
+  models: string[] | null;
   caseIds: string[] | null;
-  delayMs: number;
+  /** Null = the provider's DEFAULT_DELAY_MS. */
+  delayMs: number | null;
   maxTokens: number;
   outDir: string;
   help: boolean;
@@ -61,7 +103,8 @@ export interface CliOptions {
 
 export type ParseResult = { ok: true; options: CliOptions } | { ok: false; error: string };
 
-const MODEL_RE = /^[a-z0-9][a-z0-9.-]{1,63}$/;
+/** Anthropic, Groq, Gemini, OpenRouter (`vendor/model:free`) and Ollama (`model:tag`) ids. */
+const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{1,127}$/;
 
 function list(raw: string): string[] {
   return [
@@ -74,11 +117,26 @@ function list(raw: string): string[] {
   ];
 }
 
+function isProvider(v: string): v is LlmProviderName {
+  return (LLM_PROVIDERS as readonly string[]).includes(v);
+}
+
+function validUrl(v: string): boolean {
+  try {
+    const u = new URL(v);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export function parseArgs(argv: readonly string[], outDir = DEFAULT_REPORTS_DIR): ParseResult {
   const options: CliOptions = {
-    models: [...DEFAULT_MODELS],
+    provider: null,
+    baseUrl: null,
+    models: null,
     caseIds: null,
-    delayMs: DEFAULT_DELAY_MS,
+    delayMs: null,
     maxTokens: ENGINE_DEFAULTS.maxTokens,
     outDir,
     help: false,
@@ -100,6 +158,18 @@ export function parseArgs(argv: readonly string[], outDir = DEFAULT_REPORTS_DIR)
       return next;
     };
     switch (flag) {
+      case '--provider': {
+        const v = takeValue()?.trim().toLowerCase() ?? '';
+        if (!isProvider(v)) return { ok: false, error: '--provider must be openai or anthropic' };
+        options.provider = v;
+        break;
+      }
+      case '--base-url': {
+        const v = takeValue()?.trim() ?? '';
+        if (!validUrl(v)) return { ok: false, error: '--base-url needs an http(s) URL' };
+        options.baseUrl = v.replace(/\/+$/, '');
+        break;
+      }
       case '--models': {
         const v = takeValue();
         const models = v === null ? [] : list(v);
@@ -140,7 +210,28 @@ export function parseArgs(argv: readonly string[], outDir = DEFAULT_REPORTS_DIR)
         return { ok: false, error: `unknown argument: ${arg}` };
     }
   }
+  if (options.baseUrl !== null && options.provider === 'anthropic') {
+    return { ok: false, error: '--base-url only applies to --provider openai' };
+  }
   return { ok: true, options };
+}
+
+/**
+ * Provider from the environment, as the API picks it: MB_LLM_PROVIDER, else openai when MB_LLM_API_KEY is set,
+ * else anthropic when ANTHROPIC_API_KEY is set, else none.
+ */
+export function providerFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): LlmProviderName | null | { error: string } {
+  const explicit = env.MB_LLM_PROVIDER?.trim().toLowerCase() ?? '';
+  if (explicit !== '') {
+    return isProvider(explicit)
+      ? explicit
+      : { error: `MB_LLM_PROVIDER must be openai or anthropic (got "${explicit.slice(0, 20)}")` };
+  }
+  if (env.MB_LLM_API_KEY?.trim()) return 'openai';
+  if (env.ANTHROPIC_API_KEY?.trim()) return 'anthropic';
+  return null;
 }
 
 export interface CliIO {
@@ -152,6 +243,8 @@ export interface MainDeps {
   io?: CliIO;
   cases?: readonly EvalCase[];
   createAnthropic?: (apiKey: string) => Anthropic;
+  /** Transport for the OpenAI-compatible provider (tests pass a scripted fake). */
+  llmFetch?: typeof fetch;
   createEndpoint?: () => Promise<DemoEndpoint>;
   sleep?: (ms: number) => Promise<void>;
   now?: () => Date;
@@ -219,11 +312,36 @@ export async function main(
     return 0;
   }
 
-  const apiKey = env.ANTHROPIC_API_KEY?.trim() ?? '';
-  if (apiKey === '') {
+  const fromEnv = opts.provider ?? providerFromEnv(env);
+  if (fromEnv !== null && typeof fromEnv === 'object') {
+    io.error(`evals: ${fromEnv.error}\n\n${USAGE}`);
+    return 2;
+  }
+  const provider = fromEnv;
+  if (provider === null) {
     io.log(SKIP_MESSAGE);
     return 0;
   }
+  if (provider === 'anthropic' && opts.baseUrl !== null) {
+    io.error(
+      `evals: --base-url only applies to the openai provider (selected: anthropic)\n\n${USAGE}`,
+    );
+    return 2;
+  }
+  const keyVar = KEY_VARS[provider];
+  const apiKey = env[keyVar]?.trim() ?? '';
+  if (apiKey === '') {
+    io.log(skipMessage(provider));
+    return 0;
+  }
+  const envBaseUrl = env.MB_LLM_BASE_URL?.trim() ?? '';
+  if (opts.baseUrl === null && envBaseUrl !== '' && !validUrl(envBaseUrl)) {
+    io.error('evals: MB_LLM_BASE_URL is not an http(s) URL');
+    return 2;
+  }
+  const baseUrl = (opts.baseUrl ?? (envBaseUrl || DEFAULT_LLM_BASE_URL)).replace(/\/+$/, '');
+  const models = opts.models ?? [...DEFAULT_MODELS[provider]];
+  const delayMs = opts.delayMs ?? DEFAULT_DELAY_MS[provider];
 
   const allCases = deps.cases ?? ALL_CASES;
   let cases: readonly EvalCase[] = allCases;
@@ -251,20 +369,40 @@ export async function main(
       return 2;
     }
 
-    const anthropic =
-      deps.createAnthropic?.(apiKey) ?? new Anthropic({ apiKey, maxRetries: 2, timeout: 120_000 });
+    const llm: LlmConnection =
+      provider === 'anthropic'
+        ? {
+            provider,
+            anthropic:
+              deps.createAnthropic?.(apiKey) ??
+              new Anthropic({ apiKey, maxRetries: 2, timeout: 120_000 }),
+          }
+        : {
+            provider,
+            baseUrl,
+            apiKey,
+            ...OPENAI_EVAL_RETRY,
+            ...(deps.llmFetch ? { fetch: deps.llmFetch } : {}),
+          };
+    const safeBaseUrl = (() => {
+      const u = new URL(baseUrl);
+      return `${u.origin}${u.pathname}`.replace(/\/+$/, '');
+    })();
     const now = deps.now ?? (() => new Date());
     const sleep = deps.sleep ?? ((ms: number) => sleepMs(ms, deps.signal));
     const runId = runStamp(now());
     const engine: EngineInfo = {
-      name: 'runAgent',
+      name: provider === 'openai' ? 'runAgentOpenAI' : 'runAgent',
+      provider,
+      ...(provider === 'openai' ? { base_url: safeBaseUrl } : {}),
       endpoint: 'in-process /mcp/demo (demo tenant, FakeZoho demo dataset)',
       max_tokens: opts.maxTokens,
       max_iterations: ENGINE_DEFAULTS.maxIterations,
       tool_choice: 'auto',
     };
     io.log(
-      `evals: run ${runId} · ${cases.length} case(s) × ${opts.models.length} model(s) · ANTHROPIC_API_KEY: set`,
+      `evals: run ${runId} · provider ${provider}${provider === 'openai' ? ` (${safeBaseUrl})` : ''} · ` +
+        `${cases.length} case(s) × ${models.length} model(s) · ${keyVar}: set`,
     );
 
     const reports: ModelReport[] = [];
@@ -272,7 +410,7 @@ export async function main(
     let fatal: string | null = null;
     let interrupted = false;
 
-    for (const model of opts.models) {
+    for (const [modelIndex, model] of models.entries()) {
       if (fatal !== null || interrupted) break;
       const startedAt = now();
       const results: CaseResult[] = [];
@@ -282,11 +420,11 @@ export async function main(
           interrupted = true;
           break;
         }
-        const run =
+        const run: CaseRun =
           skipReason === null
             ? await runCase(c, {
                 model,
-                anthropic,
+                llm,
                 endpoint,
                 maxTokens: opts.maxTokens,
                 secrets: [apiKey],
@@ -297,20 +435,29 @@ export async function main(
         results.push(result);
         io.log(progressLine(model, i, cases.length, result));
 
-        const status = run.error?.status ?? null;
+        const status: number | null = run.error?.status ?? null;
         if (status === 401 || status === 403) {
-          fatal = `Anthropic rejected the API key (HTTP ${status}); stopping. Check ANTHROPIC_API_KEY and its workspace.`;
+          fatal =
+            provider === 'anthropic'
+              ? `Anthropic rejected the API key (HTTP ${status}); stopping. Check ANTHROPIC_API_KEY and its workspace.`
+              : `The LLM provider at ${safeBaseUrl} rejected the API key (HTTP ${status}); stopping. Check MB_LLM_API_KEY (and --base-url).`;
           break;
         }
         if (status === 404 && skipReason === null) {
           skipReason = `skipped: ${model} returned HTTP 404 on an earlier case (unknown model id?)`;
           io.error(`evals: ${skipReason}`);
         }
+        // Free tiers: a 429 that outlived the engine's Retry-After retries (or 402 = no credits) means the
+        // per-day quota is spent; hammering on would only fail every remaining case the same way.
+        if (provider === 'openai' && (status === 429 || status === 402) && skipReason === null) {
+          skipReason = `skipped: ${model} is still rate-limited or out of free quota (HTTP ${status}) after retries; try later, or fewer --cases / a larger --delay-ms`;
+          io.error(`evals: ${skipReason}`);
+        }
         if (deps.signal?.aborted) {
           interrupted = true;
           break;
         }
-        if (skipReason === null && i < cases.length - 1) await sleep(opts.delayMs);
+        if (skipReason === null && i < cases.length - 1) await sleep(delayMs);
       }
       const report = buildModelReport({
         runId,
@@ -319,6 +466,8 @@ export async function main(
         finishedAt: now(),
         engine,
         results,
+        // The primary (first) model carries the release gate; the rest are published as-is.
+        minPassRate: modelIndex === 0 ? PRIMARY_GATE : null,
       });
       reports.push(report);
       files[model] = await writeModelReport(opts.outDir, report);

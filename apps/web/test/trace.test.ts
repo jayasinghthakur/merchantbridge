@@ -5,7 +5,7 @@ import { circuitSeconds, decisionChip } from '../lib/decisions';
 import { applyEvent, finishRun, newRun, toolSteps } from '../lib/trace';
 
 const events: TraceEvent[] = [
-  { type: 'session', session_id: 's', model: 'claude-haiku-4-5', replay: false, faults: [] },
+  { type: 'session', session_id: 's', model: 'llama-3.3-70b-versatile', replay: false, faults: [] },
   { type: 'assistant_text', text: 'Checking ' },
   { type: 'assistant_text', text: 'stock.' },
   { type: 'tool_call', call_id: 'c1', tool: 'zoho_get_item', args: { sku: 'CHAI-250' } },

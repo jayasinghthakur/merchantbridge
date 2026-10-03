@@ -7,16 +7,28 @@ import type {
   CheckResult,
   ObservedToolCall,
 } from './assertions';
+import type { LlmProviderName } from '@mb/api';
 import type { CaseKind, EvalCase } from './case';
 import { CASE_KINDS } from './case';
 
-/** Release gate (PLAN §6 M5): Sonnet must pass ≥ 90%; other models are published as-is. */
-export const GATES: Readonly<Record<string, number>> = { 'claude-sonnet-5-5': 0.9 };
+/**
+ * Release gate (PLAN §6 M5): the primary model (the first one in --models) must pass ≥ 90%; the others are
+ * published as-is.
+ */
+export const PRIMARY_GATE = 0.9;
 
-export const DEFAULT_MODELS = ['claude-sonnet-5-5', 'claude-haiku-4-5'] as const;
+/** Models per provider when --models is not given; the first is the gated primary. */
+export const DEFAULT_MODELS: Readonly<Record<LlmProviderName, readonly string[]>> = {
+  openai: ['llama-3.3-70b-versatile'],
+  anthropic: ['claude-sonnet-5-5', 'claude-haiku-4-5'],
+};
 
 export interface EngineInfo {
-  name: 'runAgent';
+  /** runAgent = Anthropic toolRunner; runAgentOpenAI = OpenAI-compatible Chat Completions loop. */
+  name: 'runAgent' | 'runAgentOpenAI';
+  provider: LlmProviderName;
+  /** OpenAI-compatible base URL (origin + path, never credentials); only for the openai provider. */
+  base_url?: string;
   endpoint: string;
   max_tokens: number;
   max_iterations: number;
@@ -87,6 +99,8 @@ export function buildModelReport(input: {
   finishedAt: Date;
   engine: EngineInfo;
   results: CaseResult[];
+  /** Gate for this model (PRIMARY_GATE for the first model of a run); null/omitted = published as-is. */
+  minPassRate?: number | null;
 }): ModelReport {
   const { results } = input;
   const passed = results.filter((r) => r.passed).length;
@@ -99,7 +113,7 @@ export function buildModelReport(input: {
     byKind[r.kind].total += 1;
     if (r.passed) byKind[r.kind].passed += 1;
   }
-  const min = GATES[input.model];
+  const min = input.minPassRate ?? null;
   return {
     schema: 'merchantbridge-evals/v1',
     run_id: input.runId,
@@ -117,7 +131,7 @@ export function buildModelReport(input: {
       output_tokens: results.reduce((s, r) => s + r.output_tokens, 0),
       duration_ms: results.reduce((s, r) => s + r.duration_ms, 0),
     },
-    gate: min === undefined ? null : { min_pass_rate: min, passed: passRate >= min },
+    gate: min === null ? null : { min_pass_rate: min, passed: passRate >= min },
     results,
   };
 }
@@ -208,7 +222,9 @@ export function renderMarkdown(
   const out: string[] = ['# MerchantBridge evals: latest run', ''];
   if (!first) return [...out, '_No models were run._', ''].join('\n');
   out.push(
-    `Run \`${first.run_id}\` · engine \`${first.engine.name}\` (the playground loop, \`tool_choice: auto\`, ` +
+    `Run \`${first.run_id}\` · provider ${first.engine.provider}${
+      first.engine.base_url ? ` (\`${cell(first.engine.base_url)}\`)` : ''
+    } · engine \`${first.engine.name}\` (the playground loop, \`tool_choice: auto\`, ` +
       `max_tokens ${first.engine.max_tokens}, max ${first.engine.max_iterations} iterations) · endpoint: ` +
       `${first.engine.endpoint} · deterministic checks only (no LLM judge).`,
     '',

@@ -55,6 +55,25 @@ describe('health', () => {
       (await app.inject({ url: '/api/status', headers: { host: 'evil.example' } })).statusCode,
     ).toBe(403);
   });
+
+  it('GET / answers 200 for platform readiness probes (Hugging Face Spaces), whatever the Host', async () => {
+    const { app } = await setup();
+    const body = { service: 'merchantbridge-api', version: '0.1.0', docs: '/api/status' };
+    const res = await app.inject({ url: '/' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(body);
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    // Exempt from the Host check like /health/*: an internal probe Host (pod IP:port) must not 403 it.
+    const internal = await app.inject({ url: '/', headers: { host: '10.0.3.7:7860' } });
+    expect(internal.statusCode).toBe(200);
+    expect(internal.json()).toEqual(body);
+    expect((await app.inject({ method: 'HEAD', url: '/' })).statusCode).toBe(200);
+    // Only the bare root: everything else still gets the Host check and the safe 404.
+    expect(
+      (await app.inject({ url: '/api/tools', headers: { host: '10.0.3.7:7860' } })).statusCode,
+    ).toBe(403);
+    expect((await app.inject({ url: '/nope' })).statusCode).toBe(404);
+  });
 });
 
 describe('public API', () => {
@@ -64,7 +83,8 @@ describe('public API', () => {
     expect(res.json()).toEqual({
       version: '0.1.0',
       playground_enabled: false,
-      model: 'claude-haiku-4-5',
+      // No provider configured: the free OpenAI-compatible default's model (the playground stays off).
+      model: 'llama-3.3-70b-versatile',
       demo_mcp_url: 'http://localhost:8787/mcp/demo',
       tool_count: 10,
       turnstile_site_key: null,

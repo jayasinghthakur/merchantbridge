@@ -142,9 +142,9 @@ export function PlaygroundClient() {
               </Link>
             }
           >
-            This deployment is not running the model right now (no API key, the spend cap or the
-            kill switch), so the scenarios are off. The Tools explorer calls the same MCP tools on
-            the same demo data without a model, fault toggles included.
+            This deployment is not running the model right now (no LLM key, a spent free-tier quota
+            or the kill switch), so the scenarios are off. The Tools explorer calls the same MCP
+            tools on the same demo data without a model, fault toggles included.
           </Notice>
         ) : null}
         {status.kind === 'error' ? (

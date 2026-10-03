@@ -13,7 +13,7 @@ const JOURNEY: { title: string; body: string }[] = [
   },
   {
     title: 'Watch a real agent work',
-    body: 'Claude calls the MCP server; the trace shows each tool, its args, latency, cache hits, governor decisions and budget left.',
+    body: 'A live LLM agent calls the MCP server; the trace shows each tool, its args, latency, cache hits, governor decisions and budget left.',
   },
   {
     title: 'Break Zoho on purpose',

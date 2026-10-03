@@ -8,6 +8,9 @@ test.describe('playground', () => {
     await mockApi(page, { onPlaygroundRequest: (r) => (sent = r) });
     await page.goto('/playground');
     await expect(page.getByTestId('demo-badge').first()).toContainText('DEMO DATA');
+    // The model comes from /api/status, whichever provider the API runs.
+    await expect(page.getByTestId('live-model')).toHaveText('Live agent: llama-3.3-70b-versatile');
+    await expect(page.getByText(/Claude agent/)).toHaveCount(0);
 
     await page.locator('[data-scenario="dispute-evidence"]').click();
 
@@ -65,6 +68,7 @@ test.describe('playground', () => {
     await page.goto('/playground');
     const off = page.getByTestId('playground-off');
     await expect(off).toContainText('Live agent paused');
+    await expect(page.getByTestId('live-model')).toContainText('(paused)');
     await expect(off.getByRole('link', { name: 'Open the Tools explorer' })).toHaveAttribute(
       'href',
       '/tools',

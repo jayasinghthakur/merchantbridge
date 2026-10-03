@@ -63,6 +63,8 @@ export interface TestContextOptions {
   env?: Record<string, string>;
   fetch?: typeof fetch;
   anthropic?: () => Anthropic;
+  /** Transport for the OpenAI-compatible LLM provider (MB_LLM_API_KEY). Defaults to `fetch`. */
+  llmFetch?: typeof fetch;
   clock?: Clock;
   stores?: MbStores;
   logLevel?: string;
@@ -81,6 +83,7 @@ export async function testContext(opts: TestContextOptions = {}) {
     governorRandom: () => 0,
     usageFlushMs: 60_000,
     ...(opts.anthropic ? { anthropic: opts.anthropic } : {}),
+    ...(opts.llmFetch ? { llmFetch: opts.llmFetch } : {}),
   });
   return { ctx, logs, stores };
 }
