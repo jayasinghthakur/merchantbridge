@@ -83,6 +83,8 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8787/mcp/demo \
             -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
             -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | grep -q '"name":"zoho_'
+          # The stdlib Python client from examples/ against the same container.
+          MB_MCP_URL=http://127.0.0.1:8787/mcp/demo python3 examples/python/mcp_demo_client.py
           docker stop -t 25 mb-api
           test "$(docker inspect -f '{{.State.ExitCode}}' mb-api)" = "0"
 

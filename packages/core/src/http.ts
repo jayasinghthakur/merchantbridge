@@ -21,7 +21,7 @@ export const API_ROUTES = {
   oauthCallback: '/oauth/zoho/callback',
   /**
    * POST with `Authorization: Bearer mb_live_…`: revokes the tenant's Zoho refresh token at Zoho, marks the
-   * connection revoked and revokes the calling key. 200 `{ revoked_locally, revoked_at_zoho }`; a revoked key → 401.
+   * connection revoked and revokes the calling key. 200 `{ revoked_locally, revoked_at_zoho, had_connection }`; a revoked key → 401.
    */
   disconnect: '/api/connection/disconnect',
 } as const;

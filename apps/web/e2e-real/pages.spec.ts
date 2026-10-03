@@ -12,15 +12,22 @@ test('home renders the live tool count from /api/status', async ({ page }) => {
   const count = page.getByTestId('home-tool-count');
   await expect(count).toHaveAttribute('data-source', 'live');
   await expect(count).toHaveText(String(status.tool_count));
-  await expect(page.getByRole('heading', { name: `${status.tool_count} read-only tools` })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: `${status.tool_count} read-only tools` }),
+  ).toBeVisible();
   await expect(page.getByTestId('mcp-demo-command')).toContainText(
     `claude mcp add --transport http mb-demo ${status.demo_mcp_url}`,
   );
   await expect(page.getByTestId('not-affiliated')).toBeVisible();
 });
 
-test('docs renders CAN / CANNOT, the live tool table and the real demo MCP URL', async ({ page, request }) => {
-  const toolsSeen = page.waitForResponse((r) => new URL(r.url()).pathname.endsWith(API_ROUTES.tools));
+test('docs renders CAN / CANNOT, the live tool table and the real demo MCP URL', async ({
+  page,
+  request,
+}) => {
+  const toolsSeen = page.waitForResponse((r) =>
+    new URL(r.url()).pathname.endsWith(API_ROUTES.tools),
+  );
   const { body: status } = await gotoObservingStatus(page, '/docs');
   const tools = (await (await toolsSeen).json()) as ToolsResponse;
 
@@ -28,7 +35,9 @@ test('docs renders CAN / CANNOT, the live tool table and the real demo MCP URL',
   await expect(page.getByRole('heading', { name: 'Can', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Cannot', exact: true })).toBeVisible();
   await expect(page.getByTestId('docs-can')).toContainText('exact SKU');
-  await expect(page.getByTestId('docs-cannot')).toContainText('Create, edit, cancel or delete anything');
+  await expect(page.getByTestId('docs-cannot')).toContainText(
+    'Create, edit, cancel or delete anything',
+  );
   await expect(page.getByTestId('docs-tool-count')).toHaveText(String(status.tool_count));
 
   const table = page.getByTestId('docs-tool-table');
@@ -54,13 +63,21 @@ test('docs renders CAN / CANNOT, the live tool table and the real demo MCP URL',
   expect(rpc.result?.tools?.map((t) => t.name)).toEqual(tools.tools.map((t) => t.name));
 });
 
-test('connect shows the disabled-connect note when the API has no Zoho credentials', async ({ page, request }) => {
+test('connect shows the disabled-connect note when the API has no Zoho credentials', async ({
+  page,
+  request,
+}) => {
   const { body: status, apiBase } = await gotoObservingStatus(page, '/connect');
   const submit = page.getByRole('button', { name: 'Continue to Zoho' });
   await expect(page.getByRole('heading', { name: 'Connect Zoho Inventory' })).toBeVisible();
 
   if (status.connect_enabled) {
-    test.info().annotations.push({ type: 'deployment', description: 'connect is enabled; checked the open form' });
+    test
+      .info()
+      .annotations.push({
+        type: 'deployment',
+        description: 'connect is enabled; checked the open form',
+      });
     await expect(page.getByTestId('connect-disabled')).toHaveCount(0);
     await expect(submit).toBeEnabled();
     return;
@@ -68,21 +85,29 @@ test('connect shows the disabled-connect note when the API has no Zoho credentia
 
   const note = page.getByTestId('connect-disabled');
   await expect(note).toContainText('Connecting is closed right now');
-  await expect(note.getByRole('link', { name: 'Tools explorer' })).toHaveAttribute('href', '/tools');
+  await expect(note.getByRole('link', { name: 'Tools explorer' })).toHaveAttribute(
+    'href',
+    '/tools',
+  );
   await expect(submit).toBeDisabled();
   await expect(page.getByLabel('Invite code')).toBeDisabled();
 
   // The API agrees: starting OAuth bounces straight to the error page instead of Zoho.
-  const start = await request.get(`${apiBase}${API_ROUTES.oauthStart}?dc=in&invite=e2e-not-a-code`, {
-    maxRedirects: 0,
-  });
+  const start = await request.get(
+    `${apiBase}${API_ROUTES.oauthStart}?dc=in&invite=e2e-not-a-code`,
+    {
+      maxRedirects: 0,
+    },
+  );
   expect(start.status()).toBe(302);
   const location = start.headers()['location'] ?? '';
-  expect(location).toMatch(/\/connect\/error\?reason=invalid_invite$/);
+  expect(location).toMatch(/\/connect\/error\?reason=connect_disabled$/);
   expect(location).not.toContain('zoho');
 
   await page.goto(new URL(location).pathname + new URL(location).search);
-  await expect(page.getByTestId('connect-error')).toContainText('That invite code is not valid');
+  await expect(page.getByTestId('connect-error')).toContainText(
+    'Connecting real organizations is closed here',
+  );
 });
 
 test('playground shows the PLAYGROUND_DISABLED state and points to the Tools explorer', async ({
@@ -98,7 +123,12 @@ test('playground shows the PLAYGROUND_DISABLED state and points to the Tools exp
   const card = page.locator('[data-scenario="cod-stock"]');
 
   if (status.playground_enabled) {
-    test.info().annotations.push({ type: 'deployment', description: 'playground is enabled; no model call made' });
+    test
+      .info()
+      .annotations.push({
+        type: 'deployment',
+        description: 'playground is enabled; no model call made',
+      });
     await expect(page.getByTestId('playground-off')).toHaveCount(0);
     await expect(card).toBeEnabled();
     return;

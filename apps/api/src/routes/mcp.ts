@@ -3,6 +3,7 @@ import type { AuthInfo } from '@modelcontextprotocol/server';
 import type { NodeMcpRequestHandler } from '@modelcontextprotocol/node';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { hashApiKey, looksLikeApiKey } from '@mb/auth';
+import type { ApiErrorResponse } from '@mb/core';
 import { API_ROUTES } from '@mb/core';
 import type { AppContext } from '../context';
 import { demoSessionFrom } from '../demo';
@@ -51,9 +52,15 @@ export async function authenticateApiKey(
 }
 
 export function sendUnauthorized(reply: FastifyReply): FastifyReply {
-  return reply.code(401).header('www-authenticate', 'Bearer realm="merchantbridge"').send({
-    error: 'A valid MerchantBridge API key is required (Authorization: Bearer mb_live_...).',
-  });
+  return reply
+    .code(401)
+    .header('www-authenticate', 'Bearer realm="merchantbridge"')
+    .send({
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'A valid MerchantBridge API key is required (Authorization: Bearer mb_live_...).',
+      },
+    } satisfies ApiErrorResponse);
 }
 
 export type ApiKeyGuard = (
