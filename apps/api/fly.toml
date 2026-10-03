@@ -1,0 +1,84 @@
+# Fly.io config for apps/api. Deploy from the REPO ROOT (the Docker build context is the pnpm workspace):
+#   flyctl deploy . --config apps/api/fly.toml --remote-only
+# CI does the same on push to main (.github/workflows/deploy-api.yml). Step-by-step setup: docs/deploy.md.
+#
+# Secrets are NOT in this file. The human sets them with `fly secrets set` (names in docs/deploy.md §4).
+
+# CHANGE ME: Fly app names are global. Use the name you created with `fly apps create`; the default public host is
+# https://<app>.fly.dev, which must match the MB_PUBLIC_API_URL secret.
+app = "merchantbridge-api"
+primary_region = "bom" # Mumbai: closest to Zoho's IN data centre and to Indian merchants.
+
+# SIGTERM goes straight to Node (PID 1, see the Dockerfile CMD); server.ts drains in-flight requests and flushes usage
+# events, and force-exits itself after 15 s. 30 s leaves headroom before Fly sends SIGKILL.
+kill_signal = "SIGTERM"
+kill_timeout = 30
+
+[build]
+# Resolved relative to THIS file (apps/api/Dockerfile). The build context stays the deploy working directory (repo root).
+dockerfile = "Dockerfile"
+
+[deploy]
+# Applies pending Drizzle migrations once per deploy, in a temporary Machine with the app's secrets, before any app
+# Machine is updated. A non-zero exit aborts the deploy (the old version keeps serving).
+release_command = "/app/apps/api/node_modules/.bin/tsx /app/apps/api/scripts/migrate.ts"
+strategy = "rolling"
+
+[env]
+# Non-secret defaults only. The image already sets NODE_ENV, HOST and PORT; repeated here so `fly config show` is the
+# whole picture.
+NODE_ENV = "production"
+HOST = "0.0.0.0"
+PORT = "8787"
+LOG_LEVEL = "info"
+MB_PLAYGROUND_MODEL = "claude-haiku-4-5"
+MB_PLAYGROUND_DAILY_CAP = "300"
+
+[http_service]
+internal_port = 8787
+force_https = true
+# Always warm: no cold starts for MCP clients, and SSE streams are never cut by an auto-stop.
+auto_stop_machines = "off"
+auto_start_machines = true
+min_machines_running = 1
+
+[http_service.concurrency]
+# Every open SSE stream (playground answer, streamable MCP response) holds one request slot for its whole life, so the
+# limits are far above Fly's defaults. Real load is bounded much lower by the app's own per-IP and daily caps.
+type = "requests"
+soft_limit = 200
+hard_limit = 250
+
+# Liveness gates routing and deploys. It must not depend on Neon/Upstash, so a database blip never takes the API out of
+# rotation. Fly sends checks to the Machine's private IP (Host "<ip>:8787"). apps/api exempts /health/* from the MCP
+# Host allow-list; the explicit Host keeps the checks passing even if that changes ("localhost" is always allowed).
+[[http_service.checks]]
+grace_period = "20s"
+interval = "15s"
+timeout = "3s"
+method = "GET"
+path = "/health/live"
+protocol = "http"
+
+[http_service.checks.headers]
+Host = "localhost"
+
+# Readiness (db + redis + Upstash command count) as a top-level check: visible in `fly checks list` and the dashboard,
+# but it does not affect routing. As a service check, one failed probe would pull the only Machine out of rotation
+# for a whole interval. The long interval keeps Upstash commands and Neon compute low; the deploy workflow also curls
+# /health/ready after each deploy.
+[checks.ready]
+type = "http"
+port = 8787
+method = "GET"
+path = "/health/ready"
+grace_period = "30s"
+interval = "5m"
+timeout = "10s"
+
+[checks.ready.headers]
+Host = "localhost"
+
+[[vm]]
+size = "shared-cpu-1x"
+memory = "512mb"

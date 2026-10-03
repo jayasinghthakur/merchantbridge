@@ -1,0 +1,39 @@
+# Build context for apps/api/Dockerfile (context = repo root; `docker build -f apps/api/Dockerfile .` and
+# `flyctl deploy . --config apps/api/fly.toml` both read this file).
+#
+# Allow-list: ignore everything, then re-include only what the API image needs. Secrets (.env*), docs, apps/web,
+# evals, scripts, .git and .claude never enter the context. Later lines win, so the re-excludes at the bottom apply
+# inside the re-included folders. Adding a new workspace package under packages/ needs no change here; a new
+# top-level folder the API needs at runtime does.
+*
+
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.base.json
+!packages/
+!apps/api/
+
+# Never send these, even from inside the allowed folders.
+**/node_modules
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/.DS_Store
+**/*.log
+**/*.tsbuildinfo
+**/dist
+**/coverage
+
+# Dev-only files inside the allowed folders (tests, tooling configs, notes).
+**/test
+**/tests
+**/*.test.ts
+**/vitest.config.*
+**/*.md
+packages/db/drizzle.config.ts
+apps/api/scripts/*
+!apps/api/scripts/migrate.ts
+apps/api/fly.toml
+apps/api/Dockerfile

@@ -3,10 +3,15 @@ name: Deploy API
 on:
   push:
     branches: [main]
+    # Everything that can change the image (apps/api/Dockerfile copies these; .dockerignore decides the context).
     paths:
       - 'apps/api/**'
       - 'packages/**'
+      - 'package.json'
       - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
+      - '.dockerignore'
       - '.github/workflows/deploy-api.yml'
   workflow_dispatch:
 
@@ -48,7 +53,8 @@ jobs:
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
         if: steps.gate.outputs.deploy == 'true'
 
-      # Build context is the repo root so the Dockerfile can copy the whole pnpm workspace.
+      # Build context is the repo root so the Dockerfile can copy the pnpm workspace. fly.toml's [build] dockerfile
+      # is resolved relative to fly.toml itself (apps/api/Dockerfile); its release_command runs the DB migrations.
       - name: Deploy
         if: steps.gate.outputs.deploy == 'true'
         run: |

@@ -39,6 +39,57 @@ jobs:
       - run: pnpm test
       - run: pnpm --filter @mb/web build
 
+  # Builds the Fly image exactly as deploys do (context = repo root), without pushing it anywhere. Docker is not
+  # installed on the dev machine, so this job is the first real build of apps/api/Dockerfile.
+  docker:
+    name: docker build (api image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DOCKER_BUILDKIT: '1'
+      IMAGE: merchantbridge-api:ci-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build apps/api image (no push)
+        run: docker build -f apps/api/Dockerfile -t "$IMAGE" .
+
+      # Needs no secrets: production mode must refuse to boot without them, and development mode (in-memory stores,
+      # FakeZoho) boots from the same image to prove the runtime, health routes and graceful shutdown.
+      - name: Smoke-test the image
+        run: |
+          docker image ls "$IMAGE" --format 'size: {{.Size}}'
+          # Runs as the non-root node user (uid 1000).
+          test "$(docker run --rm "$IMAGE" id -u)" = "1000"
+          # The fly.toml release_command loads, then refuses to run without DATABASE_URL (exit 1).
+          if out=$(docker run --rm "$IMAGE" /app/apps/api/node_modules/.bin/tsx /app/apps/api/scripts/migrate.ts 2>&1); then
+            echo "::error::migrate.ts exited 0 without DATABASE_URL"; exit 1
+          fi
+          echo "$out"
+          echo "$out" | grep -q 'DATABASE_URL is not set'
+          # Production mode (the image default) refuses to start without DATABASE_URL / REDIS_URL.
+          if out=$(docker run --rm "$IMAGE" 2>&1); then
+            echo "::error::server started in production mode without secrets"; exit 1
+          fi
+          echo "$out"
+          echo "$out" | grep -q 'Production requires'
+          # Development mode: health, MCP demo tools/list, then SIGTERM must exit 0 (graceful shutdown).
+          docker run -d --name mb-api -p 127.0.0.1:8787:8787 -e NODE_ENV=development "$IMAGE"
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/health/live && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8787/health/live
+          curl -fsS http://127.0.0.1:8787/health/ready
+          curl -fsS -X POST http://127.0.0.1:8787/mcp/demo \
+            -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | grep -q '"name":"zoho_'
+          docker stop -t 25 mb-api
+          test "$(docker inspect -f '{{.State.ExitCode}}' mb-api)" = "0"
+
+      - name: Container logs
+        if: failure()
+        run: docker logs mb-api || true
+
   secrets-scan:
     name: gitleaks
     runs-on: ubuntu-latest
