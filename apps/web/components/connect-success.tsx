@@ -10,6 +10,22 @@ import { buttonClass, EmptyState, Loading, Notice } from './ui';
 
 type State = { kind: 'reading' } | { kind: 'ready'; result: ConnectResult } | { kind: 'empty' };
 
+/** The heading follows the state: only a page that actually holds a fresh key may say "connected". */
+function Header({ connected }: { connected: boolean }) {
+  return (
+    <div className="mb-6">
+      <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
+        {connected ? 'Zoho Inventory connected' : 'Your MerchantBridge key'}
+      </h1>
+      <p className="mt-1 text-[0.9375rem] text-ink-muted">
+        {connected
+          ? 'Your organization is now available to any agent that holds this key, read-only.'
+          : 'A key is shown here once, right after you connect a Zoho Inventory organization.'}
+      </p>
+    </div>
+  );
+}
+
 export function ConnectSuccess() {
   const [state, setState] = useState<State>({ kind: 'reading' });
   const mcpUrl = useLiveMcpUrl();
@@ -26,25 +42,36 @@ export function ConnectSuccess() {
     }
   }, []);
 
-  if (state.kind === 'reading') return <Loading label="Reading your key…" />;
+  if (state.kind === 'reading') {
+    return (
+      <>
+        <Header connected={false} />
+        <Loading label="Reading your key…" />
+      </>
+    );
+  }
 
   if (state.kind === 'empty') {
     return (
-      <EmptyState title="There is no key to show">
-        Keys are displayed once, right after connecting, and this page has already been used or opened without one.
-        Connect again to mint a new key.
-        <div className="mt-4">
-          <Link href="/connect" className={buttonClass('secondary', 'sm')}>
-            Back to connect
-          </Link>
-        </div>
-      </EmptyState>
+      <>
+        <Header connected={false} />
+        <EmptyState title="There is no key to show">
+          Keys are displayed once, right after connecting, and this page has already been used or opened without
+          one. Connect again to mint a new key.
+          <div className="mt-4">
+            <Link href="/connect" className={buttonClass('secondary', 'sm')}>
+              Back to connect
+            </Link>
+          </div>
+        </EmptyState>
+      </>
     );
   }
 
   const { key, org, dc } = state.result;
   return (
     <div className="space-y-6">
+      <Header connected />
       <Notice tone="warn" title="Copy your key now: it will not be shown again" testId="key-once-warning">
         MerchantBridge stores only a hash of this key. If you lose it, connect again to mint a new one.
       </Notice>

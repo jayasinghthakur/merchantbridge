@@ -3,6 +3,7 @@
 import type { Scenario } from '@mb/core/scenarios';
 import { SCENARIOS } from '@mb/core/scenarios';
 import type { DemoFault, PlaygroundRequest } from '@mb/core/telemetry';
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { describeApiError, isApiError, streamPlayground } from '../lib/api';
 import { MAX_MESSAGE_CHARS } from '../lib/config';
@@ -43,6 +44,9 @@ export function PlaygroundClient() {
   }, []);
 
   const siteKey = status.kind === 'ready' ? status.status.turnstile_site_key : null;
+  // When the API says the model is off, every POST would be a 503 PLAYGROUND_DISABLED: keep the controls inert
+  // and point to the Tools explorer, which runs the same tools without a model.
+  const playgroundOff = status.kind === 'ready' && !status.status.playground_enabled;
   const needsTurnstile = siteKey !== null && !verified;
   const blocked = blockedUntil !== null;
 
@@ -59,7 +63,7 @@ export function PlaygroundClient() {
   const send = useCallback(
     async (message: string, scenario: Scenario | null, onStart?: () => void) => {
       const text = message.trim().slice(0, MAX_MESSAGE_CHARS);
-      if (!text || running || blocked || !sessionId) return;
+      if (!text || running || blocked || !sessionId || playgroundOff) return;
       if (needsTurnstile && !turnstileToken) {
         setNotice('Complete the human check below the question box first.');
         return;
@@ -116,24 +120,29 @@ export function PlaygroundClient() {
         }
       }
     },
-    [running, blocked, sessionId, needsTurnstile, turnstileToken, faults, updateRun],
+    [running, blocked, sessionId, playgroundOff, needsTurnstile, turnstileToken, faults, updateRun],
   );
 
-  const replay = useCallback(() => {
-    const first = SCENARIOS[0];
-    if (first) void send(first.prompt, first);
-  }, [send]);
-
-  const disabled = running || blocked || !sessionId;
-  const playgroundOff = status.kind === 'ready' && !status.status.playground_enabled;
+  const disabled = running || blocked || !sessionId || playgroundOff;
   const activeScenario = running ? (runs[runs.length - 1]?.scenarioId ?? null) : null;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:items-start">
       <div className="min-w-0 space-y-5">
         {playgroundOff ? (
-          <Notice tone="warn" title="Live agent paused" testId="playground-off">
-            The spend cap or kill switch is active. Scenario cards play recorded runs, badged replay.
+          <Notice
+            tone="warn"
+            title="Live agent paused"
+            testId="playground-off"
+            action={
+              <Link href="/tools" className={buttonClass('secondary', 'sm')}>
+                Open the Tools explorer
+              </Link>
+            }
+          >
+            This deployment is not running the model right now (no API key, the spend cap or the kill switch), so the
+            scenarios are off. The Tools explorer calls the same MCP tools on the same demo data without a model, fault
+            toggles included.
           </Notice>
         ) : null}
         {status.kind === 'error' ? (
@@ -175,6 +184,7 @@ export function PlaygroundClient() {
               }
             }}
             placeholder="Which items are low on stock in Bengaluru?"
+            disabled={playgroundOff}
             aria-describedby="pg-question-hint"
             className="mb-input mt-2 resize-y"
           />
@@ -218,13 +228,13 @@ export function PlaygroundClient() {
           </div>
         </form>
 
-        <FaultToggles value={faults} onChange={setFaults} disabled={running} />
+        <FaultToggles value={faults} onChange={setFaults} disabled={running || playgroundOff} />
       </div>
 
       <div ref={traceRef} className="min-w-0 scroll-mt-28 lg:sticky lg:top-[4.5rem]">
         <TracePane
           runs={runs}
-          onReplay={running ? null : replay}
+          paused={playgroundOff}
           onClear={runs.length > 0 && !running ? () => setRuns([]) : null}
         />
       </div>

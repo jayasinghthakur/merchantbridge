@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { ArrowDownIcon } from './icons';
+import { LiveToolCount } from './live-tool-count';
 
 function Box({
   title,
@@ -42,7 +43,7 @@ export function ArchitectureDiagram() {
       <div className="grid gap-2 sm:grid-cols-2">
         <Box title="Merchant agents">Claude Code, Agent SDK, Messages API, Claude.ai</Box>
         <Box title="This site" tone="muted">
-          Playground and explorer run a real agent against the demo tenant
+          The playground runs a real agent and the explorer calls tools directly, both on the demo tenant
         </Box>
       </div>
       <Down label="POST /mcp (Bearer mb_live_) · /mcp/demo" />
@@ -52,7 +53,7 @@ export function ArchitectureDiagram() {
         </p>
         <div className="grid gap-2 sm:grid-cols-3">
           <Box title="MCP server" tone="brand">
-            Stateless Streamable HTTP; 9 read-only tools
+            Stateless Streamable HTTP; <LiveToolCount /> read-only tools, no write tools
           </Box>
           <Box title="ToolRuntime" tone="brand">
             Zod in and out, PII masking, untrusted text, 10K-token cap, one usage event per call

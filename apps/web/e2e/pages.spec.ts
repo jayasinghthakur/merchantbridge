@@ -27,13 +27,17 @@ test('tool explorer lists tools, builds args from the schema and shows the raw e
   await expect(page.getByTestId('demo-badge').first()).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Find by payment reference' })).toBeVisible();
 
-  await page.getByRole('button', { name: /Get item/ }).click();
-  await page.getByLabel(/^sku/).fill('CHAI-250');
+  // Faults belong to the tab's demo session, not to a tool: toggling before picking a tool must stick.
   await page.getByTestId('fault-expired_token').click();
+  await page.getByRole('button', { name: /Get item/ }).click();
+  await expect(page.getByTestId('fault-expired_token')).toHaveAttribute('aria-checked', 'true');
+  await page.getByLabel(/^sku/).fill('CHAI-250');
   await page.getByRole('button', { name: 'Run zoho_get_item' }).click();
 
   await expect(page.getByTestId('rpc-request')).toContainText('"tools/call"');
   await expect(page.getByTestId('rpc-response')).toContainText('Masala Chai 250g');
+  await expect(page.getByTestId('rpc-result')).toContainText('"amount_minor": 18000');
+  await expect(page.getByTestId('rpc-result')).not.toContainText('jsonrpc');
   await expect(page.getByTestId('explorer-summary')).toContainText('37 ms');
   expect(body).toMatchObject({ tool: 'zoho_get_item', args: { sku: 'CHAI-250', include_locations: true }, faults: ['expired_token'] });
 });

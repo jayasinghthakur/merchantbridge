@@ -16,27 +16,26 @@ function formatDuration(ms: number): string {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
-function RunError({ run, onReplay }: { run: RunState; onReplay: (() => void) | null }) {
+function ToolsExplorerLink() {
+  return (
+    <Link href="/tools" className={buttonClass('secondary', 'sm')}>
+      Open the Tools explorer
+    </Link>
+  );
+}
+
+function RunError({ run }: { run: RunState }) {
   const err = run.error;
   if (!err) return null;
   switch (err.code) {
     case 'PLAYGROUND_DISABLED':
       return (
-        <Notice
-          tone="warn"
-          title="The live agent is paused"
-          testId="playground-error"
-          action={
-            onReplay ? (
-              <button type="button" className={buttonClass('secondary', 'sm')} onClick={onReplay}>
-                Watch a recorded run
-              </button>
-            ) : null
-          }
-        >
-          To keep spend capped, live model calls are switched off right now ({err.message}). Scenario cards play
-          recorded runs, badged <strong>replay</strong>. The MCP server itself is unaffected: add it to your own Claude
-          from the home page.
+        <Notice tone="warn" title="The live agent is paused" testId="playground-error" action={<ToolsExplorerLink />}>
+          <p>{err.message}</p>
+          <p className="mt-1">
+            The MCP server itself is unaffected: the Tools explorer runs the same tools without a model, and you can add
+            the demo server to your own Claude from the home page.
+          </p>
         </Notice>
       );
     case 'RATE_LIMITED': {
@@ -77,13 +76,7 @@ function RunError({ run, onReplay }: { run: RunState; onReplay: (() => void) | n
   }
 }
 
-function RunView({
-  run,
-  onReplay,
-}: {
-  run: RunState;
-  onReplay: (() => void) | null;
-}) {
+function RunView({ run }: { run: RunState }) {
   const scenario = run.scenarioId ? SCENARIOS.find((s) => s.id === run.scenarioId) : undefined;
   const steps = toolSteps(run);
   let stepIndex = 0;
@@ -139,7 +132,7 @@ function RunView({
         </p>
       ) : null}
 
-      <RunError run={run} onReplay={onReplay} />
+      <RunError run={run} />
 
       {run.status === 'interrupted' ? (
         <Notice tone="error" title="The stream ended before the agent finished" testId="playground-interrupted">
@@ -170,11 +163,12 @@ function RunView({
 
 export function TracePane({
   runs,
-  onReplay,
+  paused,
   onClear,
 }: {
   runs: RunState[];
-  onReplay: (() => void) | null;
+  /** The API reports the playground disabled: explain instead of inviting a run. */
+  paused: boolean;
   onClear: (() => void) | null;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -219,13 +213,25 @@ export function TracePane({
         aria-live="polite"
         aria-relevant="additions"
       >
-        {runs.length === 0 ? (
+        {runs.length === 0 && paused ? (
+          <div data-testid="trace-paused">
+            <EmptyState title="Nothing will run here while the agent is paused">
+              <p>
+                Every tool the agent would call can be run by hand in the Tools explorer, with the raw JSON-RPC exchange
+                and the governor decisions for each call.
+              </p>
+              <div className="mt-4">
+                <ToolsExplorerLink />
+              </div>
+            </EmptyState>
+          </div>
+        ) : runs.length === 0 ? (
           <EmptyState title="No runs yet">
             Pick a scenario card or ask your own question. Each tool call, its arguments, latency, cache and governor
             decisions appear here as the agent works.
           </EmptyState>
         ) : (
-          runs.map((run) => <RunView key={run.id} run={run} onReplay={onReplay} />)
+          runs.map((run) => <RunView key={run.id} run={run} />)
         )}
       </div>
     </section>

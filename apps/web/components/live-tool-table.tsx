@@ -45,7 +45,7 @@ export function LiveToolTable() {
 
   return (
     <div className="space-y-2">
-      <p className="flex flex-wrap items-center gap-2 text-xs text-ink-subtle">
+      <p className="flex flex-wrap items-center gap-2 text-xs text-ink-subtle" data-testid="docs-tool-source">
         {state.kind === 'live' ? (
           <>
             <Badge tone="brand">live</Badge> from /api/tools · {rows.length} tools

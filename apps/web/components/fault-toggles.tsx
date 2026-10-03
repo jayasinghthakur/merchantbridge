@@ -68,7 +68,7 @@ export function FaultToggles({
         <h2 className="text-sm font-bold text-ink">Fault injection</h2>
         <span className="text-xs text-ink-subtle">{value.length === 0 ? 'none active' : `${value.length} active`}</span>
       </div>
-      <p className="mt-1 text-xs text-ink-muted">Applies to the next request in this tab only.</p>
+      <p className="mt-1 text-xs text-ink-muted">Sent with every request from this tab while on; other visitors are unaffected.</p>
       <ul className="mt-2 divide-y divide-line">
         {primary.map((f) => (
           <FaultSwitch

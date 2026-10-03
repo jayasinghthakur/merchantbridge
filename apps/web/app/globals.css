@@ -13,7 +13,8 @@
   --mb-sunken: #efede6;
   --mb-ink: #0f1a17;
   --mb-ink-muted: #44524d;
-  --mb-ink-subtle: #66736e;
+  /* >= 4.8:1 on every light background (surface, raised, sunken, brand/accent/danger soft); #66736e was 4.2:1 on sunken. */
+  --mb-ink-subtle: #5c6964;
   --mb-line: #dcd9cf;
   --mb-line-strong: #c4c0b3;
   --mb-brand: #0b6e58;
@@ -136,6 +137,8 @@
   pre,
   kbd {
     font-family: var(--font-mono);
+    /* JetBrains Mono draws === and -- as ligatures; code people copy or retype must show the real characters. */
+    font-variant-ligatures: none;
   }
 }
 

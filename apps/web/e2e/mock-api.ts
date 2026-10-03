@@ -213,10 +213,24 @@ export const EXPLORER_RESPONSE: ExplorerCallResponse = {
     method: 'tools/call',
     params: { name: 'zoho_get_item', arguments: { sku: 'CHAI-250' } },
   },
+  // Same shape the real API returns: the trace _meta and the text copy come before structuredContent.
   response: {
     jsonrpc: '2.0',
     id: 1,
     result: {
+      _meta: {
+        'dev.merchantbridge/trace': {
+          decisions: [{ type: 'admitted', waited_ms: 0 }],
+          upstream_calls: 1,
+          retries: 0,
+          cache_hits: 0,
+          duration_ms: 12,
+          budget_remaining_today: 499,
+        },
+      },
+      content: [
+        { type: 'text', text: '{"data":{"sku":"CHAI-250","name":"Masala Chai 250g"},"meta":{"demo":true}}' },
+      ],
       isError: false,
       structuredContent: {
         data: { sku: 'CHAI-250', name: 'Masala Chai 250g', rate: { amount_minor: 18000, currency: 'INR' } },

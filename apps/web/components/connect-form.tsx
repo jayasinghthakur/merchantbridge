@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import type { ZohoDc } from '../lib/connect';
 import { oauthStartUrl, ZOHO_DCS } from '../lib/connect';
@@ -39,8 +40,11 @@ export function ConnectForm() {
     >
       {disabled ? (
         <Notice tone="info" title="Connecting is closed right now" testId="connect-disabled">
-          New Zoho connections are switched off on this deployment. The playground, tool explorer and public MCP
-          server all keep working on demo data.
+          New Zoho connections are switched off on this deployment. The{' '}
+          <Link href="/tools" className="font-semibold text-brand-ink underline">
+            Tools explorer
+          </Link>{' '}
+          and the public demo MCP server keep working on demo data.
         </Notice>
       ) : null}
       {status.kind === 'error' ? (

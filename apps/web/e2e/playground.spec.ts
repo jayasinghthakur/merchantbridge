@@ -54,24 +54,40 @@ test.describe('playground', () => {
     await expect(page.getByTestId('tool-step')).toHaveCount(0);
   });
 
-  test('PLAYGROUND_DISABLED explains the pause and offers a replay', async ({ page }) => {
+  test('a paused playground explains why, points to the Tools explorer and sends nothing', async ({ page }) => {
+    let calls = 0;
+    await mockApi(page, { status: { playground_enabled: false }, onPlaygroundRequest: () => (calls += 1) });
+    await page.goto('/playground');
+    const off = page.getByTestId('playground-off');
+    await expect(off).toContainText('Live agent paused');
+    await expect(off.getByRole('link', { name: 'Open the Tools explorer' })).toHaveAttribute('href', '/tools');
+    await expect(page.locator('[data-scenario="cod-stock"]')).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Ask', exact: true })).toBeDisabled();
+    await expect(page.getByTestId('trace-paused')).toBeVisible();
+    expect(calls).toBe(0);
+  });
+
+  test('PLAYGROUND_DISABLED from the API (status was stale) points to the Tools explorer', async ({ page }) => {
     await mockApi(page, {
-      status: { playground_enabled: false },
       playground: async (_req, route) => {
         await route.fulfill({
           status: 503,
-          json: { error: { code: 'PLAYGROUND_DISABLED', message: 'daily spend cap reached' } },
+          json: {
+            error: {
+              code: 'PLAYGROUND_DISABLED',
+              message: 'The live agent is paused; use the Tools explorer, which needs no LLM.',
+            },
+          },
         });
       },
     });
     await page.goto('/playground');
-    await expect(page.getByTestId('playground-off')).toBeVisible();
     await page.locator('[data-scenario="cod-stock"]').click();
 
     const err = page.getByTestId('playground-error');
     await expect(err).toContainText('The live agent is paused');
-    await expect(err).toContainText('daily spend cap reached');
-    await expect(err.getByRole('button', { name: 'Watch a recorded run' })).toBeVisible();
+    await expect(err).toContainText('use the Tools explorer, which needs no LLM');
+    await expect(err.getByRole('link', { name: 'Open the Tools explorer' })).toHaveAttribute('href', '/tools');
   });
 
   test('replayed runs are badged', async ({ page }) => {

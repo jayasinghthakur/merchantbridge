@@ -12,11 +12,13 @@
     "env.d.ts",
     "next.config.ts",
     "playwright.config.ts",
+    "playwright.real.config.ts",
     "vitest.config.ts",
     "app",
     "components",
     "lib",
     "e2e",
+    "e2e-real",
     "test",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"

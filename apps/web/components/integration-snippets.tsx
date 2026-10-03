@@ -37,7 +37,7 @@ export function IntegrationSnippets() {
     <div className="space-y-10">
       <Sub title="Claude Code">
         <p className="text-sm text-ink-muted">Public demo server (synthetic data, no key):</p>
-        <CodeBlock code={claudeCodeDemo(demoUrl)} label="Terminal" wrap />
+        <CodeBlock code={claudeCodeDemo(demoUrl)} label="Terminal" wrap testId="docs-claude-code-demo" />
         <p className="text-sm text-ink-muted">
           Your own Zoho organization, with the key shown once after <Link className="font-semibold text-brand-ink underline" href="/connect">connecting</Link>:
         </p>
@@ -96,7 +96,7 @@ export function IntegrationSnippets() {
           <li>Leave the OAuth fields empty: the demo server needs no sign-in.</li>
           <li>Enable it in a chat and ask about CHAI-250.</li>
         </ol>
-        <CodeBlock code={demoUrl} label="Remote MCP server URL" wrap />
+        <CodeBlock code={demoUrl} label="Remote MCP server URL" wrap testId="docs-connector-url" />
       </Sub>
     </div>
   );

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArchitectureDiagram } from '../components/architecture-diagram';
 import { ArrowRightIcon, LockIcon } from '../components/icons';
+import { LiveToolCount } from '../components/live-tool-count';
 import { McpDemoCommand } from '../components/mcp-command';
 import { buttonClass, InlineCode, SectionHeading } from '../components/ui';
 import { STATIC_TOOLS } from '../lib/tools-fallback';
@@ -151,7 +152,15 @@ export default function HomePage() {
       </section>
 
       <section aria-labelledby="tools" className="border-t border-line py-14">
-        <SectionHeading id="tools" eyebrow="Tool surface" title={`${STATIC_TOOLS.length} read-only tools`}>
+        <SectionHeading
+          id="tools"
+          eyebrow="Tool surface"
+          title={
+            <>
+              <LiveToolCount testId="home-tool-count" /> read-only tools
+            </>
+          }
+        >
           Lists return at most 100 rows with an opaque cursor; every result stays under 10K tokens. Money comes back in
           minor units so it compares directly with Razorpay amounts.
         </SectionHeading>

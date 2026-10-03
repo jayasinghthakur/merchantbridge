@@ -5,6 +5,7 @@ import type { DemoFault } from '@mb/core/telemetry';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { callExplorer, describeApiError, getTools } from '../lib/api';
 import { decisionChip } from '../lib/decisions';
+import { summarizeRpc } from '../lib/rpc';
 import type { FormField, FormValues } from '../lib/schema-form';
 import { argsToValues, defaultValues, schemaToFields, valuesToArgs } from '../lib/schema-form';
 import { getTabSessionId } from '../lib/session';
@@ -23,20 +24,6 @@ type CallState =
   | { kind: 'running' }
   | { kind: 'done'; data: ExplorerCallResponse; at: number }
   | { kind: 'error'; message: string };
-
-/** Pulls `isError` and the error code out of a raw JSON-RPC tools/call response. */
-export function summarizeRpc(response: unknown): { isError: boolean; code: string | null } {
-  if (typeof response !== 'object' || response === null) return { isError: false, code: null };
-  const r = response as {
-    error?: { message?: unknown; code?: unknown };
-    result?: { isError?: unknown; structuredContent?: { error?: { code?: unknown } } };
-  };
-  if (r.error) {
-    return { isError: true, code: typeof r.error.code === 'number' ? `JSON-RPC ${r.error.code}` : 'JSON-RPC' };
-  }
-  const code = r.result?.structuredContent?.error?.code;
-  return { isError: r.result?.isError === true, code: typeof code === 'string' ? code : null };
-}
 
 function typeHint(f: FormField): string {
   if (f.kind === 'array') return `list of ${f.itemKind ?? 'string'}, comma separated`;
@@ -101,14 +88,24 @@ function FieldInput({
   );
 }
 
-function ToolDetail({ tool, sessionId }: { tool: PublicToolDescriptor; sessionId: string | null }) {
+function ToolDetail({
+  tool,
+  sessionId,
+  faults,
+  onFaultsChange,
+}: {
+  tool: PublicToolDescriptor;
+  sessionId: string | null;
+  /** Owned by the explorer, not the tool: faults model the demo upstream for this tab, whichever tool runs next. */
+  faults: DemoFault[];
+  onFaultsChange: (next: DemoFault[]) => void;
+}) {
   const { fields, unsupported } = useMemo(() => schemaToFields(tool.inputJsonSchema), [tool]);
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const [values, setValues] = useState<FormValues>(() => defaultValues(fields));
   const [raw, setRaw] = useState('{}');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [jsonError, setJsonError] = useState<string | null>(null);
-  const [faults, setFaults] = useState<DemoFault[]>([]);
   const [call, setCall] = useState<CallState>({ kind: 'idle' });
   const abort = useRef<AbortController | null>(null);
 
@@ -266,7 +263,7 @@ function ToolDetail({ tool, sessionId }: { tool: PublicToolDescriptor; sessionId
         </div>
       </form>
 
-      <FaultToggles value={faults} onChange={setFaults} disabled={call.kind === 'running'} />
+      <FaultToggles value={faults} onChange={onFaultsChange} disabled={call.kind === 'running'} />
 
       <section aria-label="Call result" aria-live="polite" className="space-y-3">
         {call.kind === 'idle' ? (
@@ -291,15 +288,31 @@ function ToolDetail({ tool, sessionId }: { tool: PublicToolDescriptor; sessionId
                 <Badge tone="brand">ok</Badge>
               )}
               <Badge mono>{call.data.duration_ms} ms</Badge>
-              {call.data.decisions.map((d, i) => {
-                const chip = decisionChip(d, call.at);
-                return (
-                  <Badge key={i} mono tone={chip.tone} title={chip.detail}>
-                    {chip.label}
-                  </Badge>
-                );
-              })}
             </div>
+            {call.data.decisions.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-semibold text-ink-subtle">Governor decisions</span>
+                <ul className="flex flex-wrap gap-1.5" aria-label="Governor decisions" data-testid="explorer-decisions">
+                  {call.data.decisions.map((d, i) => {
+                    const chip = decisionChip(d, call.at);
+                    return (
+                      <li key={i}>
+                        <Badge mono tone={chip.tone} title={chip.detail} testId={`decision-${d.type}`}>
+                          {chip.label}
+                        </Badge>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
+            {rpc.structured !== null ? (
+              <JsonView
+                value={rpc.structured}
+                label={rpc.isError ? 'Error result (structuredContent)' : 'Result (structuredContent)'}
+                testId="rpc-result"
+              />
+            ) : null}
             <JsonView value={call.data.request} label="JSON-RPC request" testId="rpc-request" />
             <JsonView value={call.data.response} label="JSON-RPC response" testId="rpc-response" />
           </>
@@ -313,6 +326,7 @@ export function ToolsExplorer() {
   const [state, setState] = useState<ToolsState>({ kind: 'loading' });
   const [selected, setSelected] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [faults, setFaults] = useState<DemoFault[]>([]);
 
   const load = useCallback((signal?: AbortSignal) => {
     setState({ kind: 'loading' });
@@ -417,7 +431,7 @@ export function ToolsExplorer() {
           </ul>
         </nav>
       </div>
-      <ToolDetail key={tool.name} tool={tool} sessionId={sessionId} />
+      <ToolDetail key={tool.name} tool={tool} sessionId={sessionId} faults={faults} onFaultsChange={setFaults} />
     </div>
   );
 }

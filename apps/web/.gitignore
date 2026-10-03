@@ -1,4 +1,5 @@
 e2e/screenshots/
+e2e-real/screenshots/
 next-env.d.ts
 .next/
 test-results/

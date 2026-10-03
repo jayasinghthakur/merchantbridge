@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>
+    .tile { fill: #0b6e58; }
+    .deck { stroke: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      .tile { fill: #3dd6a8; }
+      .deck { stroke: #0e1513; }
+    }
+  </style>
+  <rect class="tile" x="1" y="1" width="30" height="30" rx="8" />
+  <path class="deck" d="M6 21h20M9 21v-5M23 21v-5M6 16c4-6 16-6 20 0" stroke-width="2.2" stroke-linecap="round" fill="none" />
+</svg>

@@ -12,7 +12,7 @@ const STEPS = [
   'You sign in to Zoho once and approve read-only access for one organization.',
   'MerchantBridge stores the refresh token encrypted and never hands Zoho tokens to an agent.',
   'You get an mb_live_ key, shown once, that every agent you run can use.',
-  'Revoke any time: disconnecting revokes the Zoho token, and you can also remove the app in Zoho’s connected apps.',
+  'Revoke access any time by removing MerchantBridge from the connected apps in your Zoho account.',
 ];
 
 export default function ConnectPage() {

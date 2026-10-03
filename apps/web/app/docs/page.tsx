@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { CheckIcon, LockIcon } from '../../components/icons';
 import { IntegrationSnippets } from '../../components/integration-snippets';
+import { LiveToolCount } from '../../components/live-tool-count';
 import { LiveToolTable } from '../../components/live-tool-table';
 import { InlineCode, SectionHeading } from '../../components/ui';
 import { REPO_URL } from '../../lib/config';
@@ -13,6 +14,7 @@ export const metadata: Metadata = {
 
 const CAN: ReactNode[] = [
   <>Look up items by id or exact SKU, with price and stock per warehouse location.</>,
+  <>Check stock for several known items in one call: up to 25 item ids or 5 SKUs, such as every line of a cart.</>,
   <>Fetch a sales order with its line items, packages, tracking numbers and invoices in one call.</>,
   <>Search customers by name, company, email or phone, and list their sales orders and invoices.</>,
   <>List invoices by status, customer or due date, with balances in minor units.</>,
@@ -84,7 +86,7 @@ function Card({ title, icon, children }: { title: string; icon: ReactNode; child
 
 function Bullets({ items, tone }: { items: ReactNode[]; tone: 'can' | 'cannot' }) {
   return (
-    <ul className="space-y-2.5 text-sm leading-relaxed text-ink-muted">
+    <ul className="space-y-2.5 text-sm leading-relaxed text-ink-muted" data-testid={`docs-${tone}`}>
       {items.map((item, i) => (
         <li key={i} className="flex gap-2.5">
           <span
@@ -115,8 +117,8 @@ export default function DocsPage() {
 
       <section aria-labelledby="capabilities" className="pt-12">
         <SectionHeading id="capabilities" eyebrow="Capabilities" title="What it can and cannot do">
-          Nine read-only tools over one Zoho Inventory organization. The limits are enforced by the server, not by the
-          prompt.
+          <LiveToolCount testId="docs-tool-count" /> read-only tools over one Zoho Inventory organization. The limits are
+          enforced by the server, not by the prompt.
         </SectionHeading>
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <Card title="Can" icon={<CheckIcon size={18} className="text-brand-ink" />}>
