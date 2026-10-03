@@ -4,7 +4,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./scenarios": "./src/scenarios.ts",
+    "./http": "./src/http.ts",
+    "./telemetry": "./src/telemetry.ts",
+    "./governor": "./src/governor.ts",
+    "./errors": "./src/errors.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
