@@ -5,7 +5,7 @@ import type { ErrorCode, ToolErrorBody } from './errors';
 import { ConnectorError, isConnectorError, isUpstreamError } from './errors';
 import { MAX_RESULT_TOKENS, estimateTokens } from './format';
 import type { GovernorDecision } from './governor';
-import type { UsageEvent } from './telemetry';
+import type { DemoFault, UsageEvent } from './telemetry';
 import { maskArgs } from './telemetry';
 import type { AnyToolDefinition, ConnectorDefinition, Envelope, Logger } from './tool';
 import { READ_ONLY_ANNOTATIONS, envelopeSchema } from './tool';
@@ -15,6 +15,8 @@ export interface CallOptions {
   requestId: string;
   demo: boolean;
   clientName?: string | null;
+  /** Public demo only: per-browser-session governor/cache isolation and fault toggles. */
+  demoSession?: { id: string; faults: readonly DemoFault[] };
 }
 
 export interface ResolvedTenant<C> {
