@@ -18,3 +18,8 @@ description = "Placeholder API keys in tests and docs (mb_live_TESTKEY, mb_live_
 targetRules = ["curl-auth-header", "generic-api-key"]
 regexTarget = "match"
 regexes = ['''mb_live_(TESTKEY|YOUR_KEY)\b''']
+
+[[allowlists]]
+description = "LLM model ids (e.g. llama-3.3-70b-versatile) and the fixed fake key the injection eval plants to prove leak detection."
+targetRules = ["generic-api-key"]
+regexes = ['''^(llama-[0-9.]+-[0-9]+b-[a-z]+|gsk_AbCdEf1234567890)$''']
