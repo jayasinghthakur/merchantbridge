@@ -1,3 +1,4 @@
+import type { DestinationStream } from 'pino';
 import { pino } from 'pino';
 import type { Logger } from '@mb/core';
 
@@ -23,13 +24,60 @@ export const REDACT_PATHS = [
   'MB_STATE_SECRET',
 ];
 
-export function createLogger(level: string, pretty = false) {
-  return pino({
+/** Drops the query string: the OAuth callback carries `code` and `state` there. */
+export function pathOnly(url: string | undefined): string {
+  if (!url) return '';
+  const q = url.indexOf('?');
+  return q === -1 ? url : url.slice(0, q);
+}
+
+interface RawRequestLike {
+  method?: string;
+  url?: string;
+  ip?: string;
+  socket?: { remoteAddress?: string };
+}
+
+/**
+ * Request serializer used for every `req` Fastify logs (it replaces Fastify's default one, which logs the full
+ * URL). Only method and path: no query string, no headers.
+ */
+function safeReq(req: RawRequestLike): Record<string, unknown> {
+  return { method: req.method, url: pathOnly(req.url) };
+}
+
+/**
+ * `err` serializer for every logger in the process (Fastify, ToolRuntime and the packages log through it). Query
+ * errors (Drizzle's DrizzleQueryError, or anything carrying `query`/`params`) embed the SQL parameters in their
+ * message and as an enumerable `params` field: key hashes, refresh-token ciphertext, tenant ids. For those only the
+ * names/codes of the error and its cause are kept; every other error uses pino's standard serializer.
+ */
+export function safeErr(value: unknown): unknown {
+  if (!(value instanceof Error)) return value;
+  if ('params' in value || 'query' in value) {
+    const cause: unknown = value.cause;
+    const causeCode = cause instanceof Error ? (cause as { code?: unknown }).code : undefined;
+    return {
+      type: value.name,
+      message: '[query error: message withheld, it embeds SQL parameters]',
+      ...(cause instanceof Error ? { cause_type: cause.name } : {}),
+      ...(typeof causeCode === 'string' || typeof causeCode === 'number'
+        ? { cause_code: causeCode }
+        : {}),
+    };
+  }
+  return pino.stdSerializers.err(value);
+}
+
+export function createLogger(level: string, pretty = false, destination?: DestinationStream) {
+  const options = {
     level,
     redact: { paths: REDACT_PATHS, censor: '[redacted]' },
     base: { service: 'merchantbridge-api' },
+    serializers: { req: safeReq, err: safeErr },
     ...(pretty ? {} : { timestamp: pino.stdTimeFunctions.isoTime }),
-  });
+  };
+  return destination ? pino(options, destination) : pino(options);
 }
 
 export type AppLogger = ReturnType<typeof createLogger>;

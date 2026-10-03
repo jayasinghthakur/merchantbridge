@@ -25,9 +25,14 @@ export class RedisKv implements Kv {
     return this.redis.get(key);
   }
 
-  async set(key: string, value: string, opts: { ttlMs?: number; nx?: boolean } = {}): Promise<boolean> {
+  async set(
+    key: string,
+    value: string,
+    opts: { ttlMs?: number; nx?: boolean } = {},
+  ): Promise<boolean> {
     let res: string | null;
-    if (opts.ttlMs !== undefined && opts.nx) res = await this.redis.set(key, value, 'PX', opts.ttlMs, 'NX');
+    if (opts.ttlMs !== undefined && opts.nx)
+      res = await this.redis.set(key, value, 'PX', opts.ttlMs, 'NX');
     else if (opts.ttlMs !== undefined) res = await this.redis.set(key, value, 'PX', opts.ttlMs);
     else if (opts.nx) res = await this.redis.set(key, value, 'NX');
     else res = await this.redis.set(key, value);

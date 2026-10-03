@@ -9,7 +9,11 @@ export async function verifyTurnstile(opts: {
 }): Promise<boolean> {
   if (!opts.secret) return true;
   if (!opts.token) return false;
-  const body = new URLSearchParams({ secret: opts.secret, response: opts.token, remoteip: opts.ip });
+  const body = new URLSearchParams({
+    secret: opts.secret,
+    response: opts.token,
+    remoteip: opts.ip,
+  });
   try {
     const res = await (opts.fetch ?? fetch)(VERIFY_URL, {
       method: 'POST',

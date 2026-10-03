@@ -52,7 +52,18 @@ const envSchema = z.object({
   TURNSTILE_SITE_KEY: optionalString,
   /** CIDR list whose callers (e.g. Anthropic's MCP egress) get the larger shared /mcp/demo bucket. */
   MB_TRUSTED_EGRESS_CIDRS: list,
+  /**
+   * Where the caller IP for rate limits comes from (see http-util.ts `resolveClientIp`). Defaults to
+   * 'fly-client-ip' when running on Fly (FLY_APP_NAME is set on every Fly Machine), otherwise 'socket'.
+   */
+  MB_CLIENT_IP_SOURCE: z.enum(['socket', 'fly-client-ip', 'xff-last']).optional(),
+  /** Set by Fly.io on every Machine; only used to pick the client-IP source. */
+  FLY_APP_NAME: optionalString,
+  /** Bearer token for GET /metrics. Without it /metrics is open in dev/test and disabled (404) in production. */
+  MB_METRICS_TOKEN: optionalString,
 });
+
+export type ClientIpSource = 'socket' | 'fly-client-ip' | 'xff-last';
 
 export type Env = z.infer<typeof envSchema>;
 
@@ -64,12 +75,15 @@ export interface AppConfig {
   playgroundEnabled: boolean;
   allowedHosts: string[];
   corsOrigins: string[];
+  clientIpSource: ClientIpSource;
 }
 
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = envSchema.safeParse(source);
   if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+    const issues = parsed.error.issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
     throw new Error(`Invalid environment configuration:\n${issues}`);
   }
   const env = parsed.data;
@@ -77,11 +91,11 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
 
   const connectEnabled = Boolean(
     env.ZOHO_CLIENT_ID &&
-      env.ZOHO_CLIENT_SECRET &&
-      env.ZOHO_REDIRECT_URI &&
-      env.MB_ENCRYPTION_KEY &&
-      env.MB_STATE_SECRET &&
-      env.MB_CONNECT_INVITE_CODE,
+    env.ZOHO_CLIENT_SECRET &&
+    env.ZOHO_REDIRECT_URI &&
+    env.MB_ENCRYPTION_KEY &&
+    env.MB_STATE_SECRET &&
+    env.MB_CONNECT_INVITE_CODE,
   );
 
   if (isProd) {
@@ -102,14 +116,21 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     playgroundEnabled: env.MB_PLAYGROUND_ENABLED && Boolean(env.ANTHROPIC_API_KEY),
     allowedHosts,
     corsOrigins,
+    clientIpSource: env.MB_CLIENT_IP_SOURCE ?? (env.FLY_APP_NAME ? 'fly-client-ip' : 'socket'),
   };
 }
 
-/** Matches an Origin against the allow-list; entries may end with '*' (e.g. https://merchantbridge-*.vercel.app). */
+/**
+ * Matches an Origin against the allow-list; an entry may contain one '*' (e.g.
+ * https://merchantbridge-*-team.vercel.app), which matches exactly one run of DNS-label characters: never a '.',
+ * '/' or ':' so a wildcard cannot reach into another domain or label.
+ */
 export function originAllowed(origin: string, allowed: string[]): boolean {
   return allowed.some((entry) => {
     if (!entry.includes('*')) return entry === origin;
     const [prefix, suffix] = entry.split('*', 2) as [string, string];
-    return origin.startsWith(prefix) && origin.endsWith(suffix) && origin.length > prefix.length + suffix.length;
+    if (!origin.startsWith(prefix) || !origin.endsWith(suffix)) return false;
+    const middle = origin.slice(prefix.length, origin.length - suffix.length);
+    return origin.length > prefix.length + suffix.length && /^[A-Za-z0-9-]+$/.test(middle);
   });
 }
