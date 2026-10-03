@@ -39,7 +39,7 @@ export const getSalesOrder = defineTool({
     'Use when the user asks about a specific order, what was shipped, tracking or delivery status, or to build ' +
     "dispute evidence after zoho_find_by_payment_reference. Don't use to list or filter many orders (use " +
     'zoho_list_sales_orders). Pass exactly one of salesorder_id or salesorder_number; lookup by number scans ' +
-    `the ${SCAN_MAX_PAGES * SCAN_PAGE_SIZE} most recent orders. ${READ_ONLY}`,
+    `the first ${SCAN_MAX_PAGES * SCAN_PAGE_SIZE} orders Zoho returns (believed newest first). ${READ_ONLY}`,
   input,
   output: salesOrderDetailSchema,
   scopes: [SCOPE.salesorders],
@@ -57,7 +57,7 @@ export const getSalesOrder = defineTool({
         throw new ConnectorError('NOT_FOUND', `No sales order numbered ${wanted} was found.`, {
           hint: scan.complete
             ? 'Check the number; it does not exist in this organization.'
-            : `Only the ${SCAN_MAX_PAGES * SCAN_PAGE_SIZE} most recent orders were checked; pass salesorder_id if known.`,
+            : `Only the first ${SCAN_MAX_PAGES * SCAN_PAGE_SIZE} orders Zoho returned were checked; pass salesorder_id if known.`,
         });
       }
       id = hit.salesorder_id;

@@ -1,6 +1,6 @@
 import { isConnectorError } from '@mb/core';
 import { z } from 'zod';
-import { SCOPE, ZOHO_SCOPES } from '../scopes';
+import { SCOPE } from '../scopes';
 import { envelopes, parseUpstream } from '../upstream';
 import { READ_ONLY, defineTool } from './shared';
 
@@ -16,8 +16,12 @@ const output = z.object({
     })
     .nullable(),
   plan: z.string().nullable(),
-  scopes_granted: z.array(z.string()),
-  scopes_missing: z.array(z.string()),
+  scopes_requested: z
+    .array(z.string())
+    .describe(
+      'Read scopes MerchantBridge asked for when the merchant connected. Zoho does not report which were ' +
+        'granted; a missing grant shows up as SCOPE_NOT_GRANTED from the tool that needs it.',
+    ),
   upstream: z.object({
     reachable: z.boolean(),
     error_code: z
@@ -43,7 +47,7 @@ export const getConnectionStatus = defineTool({
   title: 'Zoho connection status',
   description:
     'Returns the health of the Zoho Inventory connection: organization name and currency, data center, plan, ' +
-    'granted and missing scopes, whether Zoho is reachable, and the rate governor state (calls left today, ' +
+    'the read scopes requested at connect, whether Zoho is reachable, and the rate governor state (calls left today, ' +
     'circuit breaker). Use when another tool returned RECONNECT_REQUIRED, RATE_LIMITED or ' +
     "DAILY_QUOTA_EXHAUSTED, or the user asks which Zoho org is connected. Don't use to look up business data " +
     `(use the search/list/get tools instead). Costs 1 live upstream call (never cached). ${READ_ONLY}`,
@@ -71,7 +75,6 @@ export const getConnectionStatus = defineTool({
       errorCode = isConnectorError(e) ? e.code : 'UPSTREAM_ERROR';
     }
     const snap = await client.snapshot();
-    const granted = [...info.scopes];
     return {
       data: {
         mode: info.mode,
@@ -87,8 +90,8 @@ export const getConnectionStatus = defineTool({
                 time_zone: null,
               }),
         plan: info.plan,
-        scopes_granted: granted,
-        scopes_missing: ZOHO_SCOPES.filter((s) => !granted.includes(s)),
+        // What we asked for at connect; Zoho's token response does not list granted scopes.
+        scopes_requested: [...info.scopes],
         upstream: { reachable: errorCode === null, error_code: errorCode },
         governor: {
           budget_remaining_today: snap.budget_remaining_today,

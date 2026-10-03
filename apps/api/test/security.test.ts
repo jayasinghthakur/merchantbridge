@@ -10,6 +10,7 @@ import { runAgent } from '../src/playground/engine';
 import { SYSTEM_PROMPT } from '../src/playground/prompt';
 import { loadConfig, originAllowed } from '../src/config';
 import { ipSessionId } from '../src/demo';
+import { TRACE_META_KEY } from '../src/mcp';
 import { ipBucket } from '../src/http-util';
 import { scriptedAnthropic } from './anthropic-fake';
 import { toCoreLogger } from '../src/infra/logger';
@@ -90,12 +91,25 @@ describe('demo session isolation', () => {
   it("a caller cannot claim another caller's IP-derived session and poison it with faults", async () => {
     const { app } = await setup();
     const victimIp = '203.0.113.10';
-    const attacker = await routeClient(app, '/mcp/demo', {
+    // Naming a server-reserved ip- session together with faults is refused outright.
+    const poisoned = await demoPing(app, {
       remoteAddress: '198.51.100.66',
       headers: { 'x-mb-session': ipSessionId(victimIp), 'x-mb-faults': 'daily_quota_45' },
     });
+    expect(poisoned.statusCode).toBe(400);
+    expect(poisoned.json()).toMatchObject({ error: { code: 'BAD_REQUEST' } });
+
+    // Without faults the claimed id is ignored: the attacker lands on its own IP session.
+    const attacker = await routeClient(app, '/mcp/demo', {
+      remoteAddress: '198.51.100.66',
+      headers: { 'x-mb-session': ipSessionId(victimIp) },
+    });
     cleanup.push(() => attacker.close());
-    await attacker.callTool({ name: 'zoho_get_item', arguments: { sku: DEMO_IDS.sku } });
+    const own = await attacker.callTool({
+      name: 'zoho_get_item',
+      arguments: { sku: DEMO_IDS.sku },
+    });
+    expect((own._meta as Json)[TRACE_META_KEY].session).toBe(ipSessionId('198.51.100.66'));
 
     const victim = await routeClient(app, '/mcp/demo', { remoteAddress: victimIp });
     cleanup.push(() => victim.close());
@@ -131,12 +145,17 @@ describe('demo session isolation', () => {
     expect(res.isError).not.toBe(true);
   });
 
-  it('X-MB-Faults is ignored without an explicit X-MB-Session (IP sessions are shared by NAT/egress)', async () => {
+  it('X-MB-Faults without an explicit X-MB-Session is refused (IP sessions are shared by NAT/egress)', async () => {
     const { app } = await setup();
-    const client = await routeClient(app, '/mcp/demo', {
+    const refused = await demoPing(app, {
       remoteAddress: '203.0.113.20',
       headers: { 'x-mb-faults': 'rate_limit_44' },
     });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().error.message).toMatch(/X-MB-Session/);
+
+    // The shared IP session itself stays healthy.
+    const client = await routeClient(app, '/mcp/demo', { remoteAddress: '203.0.113.20' });
     cleanup.push(() => client.close());
     const res = await client.callTool({ name: 'zoho_get_item', arguments: { sku: DEMO_IDS.sku } });
     expect(res.isError).not.toBe(true);

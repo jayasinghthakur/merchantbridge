@@ -11,6 +11,7 @@ import {
 } from '@mb/core';
 import { z } from 'zod';
 import type { ZohoApi } from '../client';
+import { isoDate } from '../mappers';
 import type { UpstreamSalesOrder } from '../upstream';
 import { envelopes, parseUpstream } from '../upstream';
 
@@ -189,14 +190,32 @@ export async function namedNotFound<T>(work: Promise<T>, message: string): Promi
   }
 }
 
-/** Bounded scan for endpoints without documented filters: 3 pages × 200 = the 600 most recent records. */
+/**
+ * Bounded scan for endpoints without documented filters: the first 3 pages × 200 = 600 records Zoho returns.
+ * salesorders.yml documents no sort parameter (only page/per_page) and no default order, so "the first 600" are
+ * the most recent only if Zoho lists newest first (UNVERIFIED, probe P-16): every scan checks the order it got.
+ */
 export const SCAN_MAX_PAGES = 3;
 export const SCAN_PAGE_SIZE = 200;
 
 export interface SalesOrderScan {
   rows: UpstreamSalesOrder[];
-  /** True when the scan reached the last upstream page (nothing older left unchecked). */
+  /** True when the scan reached the last upstream page (no further records left unchecked). */
   complete: boolean;
+  /** True when the scanned rows' dates never increase, across page boundaries (i.e. they came newest first). */
+  orderVerified: boolean;
+}
+
+/** True when the ISO dates never increase (newest first); rows without a readable date are skipped. */
+export function datesNonIncreasing(dates: readonly (string | null)[]): boolean {
+  let previous: string | null = null;
+  for (const raw of dates) {
+    const day = isoDate(raw);
+    if (day === null) continue;
+    if (previous !== null && day > previous) return false;
+    previous = day;
+  }
+  return true;
 }
 
 export async function scanSalesOrders(
@@ -205,12 +224,17 @@ export async function scanSalesOrders(
   stop?: (batch: UpstreamSalesOrder[]) => boolean,
 ): Promise<SalesOrderScan> {
   const rows: UpstreamSalesOrder[] = [];
+  const done = (complete: boolean): SalesOrderScan => ({
+    rows,
+    complete,
+    orderVerified: datesNonIncreasing(rows.map((r) => r.date)),
+  });
   for (let page = 1; page <= SCAN_MAX_PAGES; page++) {
     const res = await client.get('salesorders', { ...query, page, per_page: SCAN_PAGE_SIZE });
     const body = parseUpstream(envelopes.salesorders, res.body);
     rows.push(...body.salesorders);
-    if (!body.page_context.has_more_page) return { rows, complete: true };
-    if (stop?.(body.salesorders)) return { rows, complete: false };
+    if (!body.page_context.has_more_page) return done(true);
+    if (stop?.(body.salesorders)) return done(false);
   }
-  return { rows, complete: false };
+  return done(false);
 }

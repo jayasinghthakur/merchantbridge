@@ -14,6 +14,7 @@ import type {
 import { API_ROUTES, SCENARIOS } from '@mb/core';
 import { originAllowed } from './config';
 import type { AppContext } from './context';
+import { APPLIED_FAULTS_HEADER } from './demo';
 import { resolveClientIp } from './http-util';
 import { pathOnly } from './infra/logger';
 import type { McpEndpoint } from './mcp';
@@ -169,7 +170,7 @@ export async function buildApp(
           origin: '*',
           credentials: false,
           methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-          exposedHeaders: ['mcp-session-id', 'mcp-protocol-version'],
+          exposedHeaders: ['mcp-session-id', 'mcp-protocol-version', APPLIED_FAULTS_HEADER],
           maxAge: 600,
         });
         return;

@@ -28,6 +28,7 @@ export interface ZohoTokenSource {
 export interface ZohoConnectionInfo {
   mode: 'demo' | 'live';
   dc: string;
+  /** Scopes requested at connect. Zoho's token response does not list granted scopes, so this is not proof. */
   scopes: readonly string[];
   organizationName: string | null;
   plan: string | null;
@@ -70,7 +71,11 @@ export interface ZohoApi {
     query?: ZohoQuery,
     opts?: { cacheTtlMs?: number },
   ): Promise<ZohoGetResult<T>>;
-  /** Deep link into the Zoho Inventory web app, so a human can verify an agent's claim. */
+  /**
+   * Deep link into the Zoho Inventory web app, so a human can verify an agent's claim.
+   * UNVERIFIED: the route format (`{web}/app/{org}#/{route}/{id}`, see WEB_ROUTES) was observed in the web app, is
+   * not in Zoho's API docs, and stays unverified until the scripts/smoke.ts probe confirms it (ADR-0001).
+   */
   webUrl(kind: ZohoWebKind, id?: string): string;
   info(): ZohoConnectionInfo;
   snapshot(): Promise<GovernorSnapshot>;
@@ -205,6 +210,14 @@ export function createZohoApi(deps: ZohoApiDeps): ZohoApi {
   }
   const origin = base.origin;
   const webBase = deps.webBaseUrl.replace(/\/+$/, '');
+  /** A throwing trace callback must never fail the request it describes. */
+  const note = (d: GovernorDecision): void => {
+    try {
+      deps.note(d);
+    } catch {
+      log.warn({ upstream: 'zoho', decision: d.type }, 'zoho client: note callback threw');
+    }
+  };
 
   function buildRequest(
     rawPath: string,
@@ -367,6 +380,9 @@ export function createZohoApi(deps: ZohoApiDeps): ZohoApi {
       log.warn({ upstream: 'zoho', path }, 'zoho token refresh failed');
       throw reconnectRequired();
     }
+    // Visible in the trace, and the retry counts towards usage.retries like any governor retry.
+    note({ type: 'token_refreshed' });
+    note({ type: 'retried', attempt: 2, reason: 'token_refreshed', backoff_ms: 0 });
     const second = await governed(path, url, () => Promise.resolve(fresh), used);
     if (second.kind === 'ok') return second.body;
     throw reconnectRequired();

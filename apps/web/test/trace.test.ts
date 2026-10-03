@@ -75,6 +75,14 @@ describe('decision chips', () => {
     expect(decisionChip({ type: 'cache_hit' }, 0).tone).toBe('brand');
   });
 
+  it('labels an access-token refresh and the retry it caused', () => {
+    expect(decisionChip({ type: 'token_refreshed' }, 0).label).toBe('token refreshed');
+    expect(decisionChip({ type: 'token_refreshed' }, 0).detail).toMatch(/401/);
+    expect(
+      decisionChip({ type: 'retried', attempt: 2, reason: 'token_refreshed', backoff_ms: 0 }, 0).label,
+    ).toBe('retried after token refresh');
+  });
+
   it('treats large until_ms as an epoch timestamp', () => {
     const now = Date.UTC(2026, 9, 3);
     expect(circuitSeconds(now + 45_000, now)).toBe('45s');

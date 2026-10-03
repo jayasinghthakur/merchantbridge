@@ -57,12 +57,21 @@ const input = z.object({
 const scanSchema = z
   .object({
     bounded: z.literal(true),
-    scanned: z.number().int().describe('Most recent orders checked against the filters.'),
+    scanned: z
+      .number()
+      .int()
+      .describe('Orders checked against the filters: the first ones Zoho returned.'),
     max_scanned: z.number().int(),
-    more_beyond_scan: z.boolean().describe('True when older orders exist that were not checked.'),
+    more_beyond_scan: z.boolean().describe('True when Zoho has more orders that were not checked.'),
+    order_verified: z
+      .boolean()
+      .describe(
+        'True when the scanned orders came newest first (dates never increase), so the scan covered the most ' +
+          'recent orders. False means Zoho returned them in another order: unchecked orders may be newer.',
+      ),
   })
   .nullable()
-  .describe('Present when filters were applied by scanning recent orders.');
+  .describe('Present when filters were applied by scanning the first orders Zoho returns.');
 
 type Filters = Omit<z.output<typeof input>, 'limit' | 'cursor'>;
 
@@ -79,10 +88,11 @@ export const listSalesOrders = defineTool({
   name: 'zoho_list_sales_orders',
   title: 'List sales orders',
   description:
-    'Lists sales orders newest first: salesorder_id, number, date, status, customer, total (minor units). ' +
-    'Optional filters: customer_id, status (void = cancelled) and date range. Zoho documents no server-side ' +
-    `filters for sales orders, so filtered queries only check the ${SCAN_MAX_PAGES * SCAN_PAGE_SIZE} most recent ` +
-    'orders; data.scan.more_beyond_scan says when older orders were not checked. Use when the user asks for a ' +
+    'Lists sales orders: salesorder_id, number, date, status, customer, total (minor units). Optional filters: ' +
+    'customer_id, status (void = cancelled) and date range. Zoho documents no server-side filters or sort for ' +
+    `sales orders, so filtered queries only check the first ${SCAN_MAX_PAGES * SCAN_PAGE_SIZE} orders Zoho ` +
+    'returns (believed newest first; see data.scan.order_verified) and return matches newest first; ' +
+    'data.scan.more_beyond_scan says when further orders were not checked. Use when the user asks for a ' +
     "customer's order history (get customer_id from zoho_search_customers first), cancellations, or orders in a " +
     "status/date range. Don't use for one order's line items, shipments or tracking (use zoho_get_sales_order). " +
     READ_ONLY,
@@ -133,6 +143,7 @@ export const listSalesOrders = defineTool({
           scanned: scan.rows.length,
           max_scanned: SCAN_MAX_PAGES * SCAN_PAGE_SIZE,
           more_beyond_scan: !scan.complete,
+          order_verified: scan.orderVerified,
         },
       },
       page: offsetPage(offset, taken.length, hits.length, fp),

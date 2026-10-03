@@ -4,7 +4,7 @@ import { DEMO_IDS } from '@mb/core';
 import { ZOHO_SCOPES } from '@mb/zoho-inventory';
 import { buildApp } from '../src/app';
 import { OAUTH_COOKIE, sha256Hex } from '../src/routes/oauth';
-import { GOOD_CODE, createLiveUpstream } from './fakes';
+import { GOOD_CODE, REFRESH_TOKEN, createLiveUpstream } from './fakes';
 import { LIVE_ENV, TEST_INVITE, routeClient, structured, testContext } from './helpers';
 
 const WEB = 'http://localhost:3000';
@@ -114,6 +114,8 @@ describe('OAuth callback', () => {
     expect(frag.get('dc')).toBe('in');
     expect(String(res.headers['set-cookie'])).toMatch(/Max-Age=0/);
     expect(upstream.tokenCalls('authorization_code')).toBe(1);
+    // The refresh token is kept, never revoked, on success.
+    expect(upstream.revokes()).toEqual([]);
 
     // The connect flow primed the access token: the first tool call needs no refresh.
     const client = await routeClient(app, '/mcp', { headers: { authorization: `Bearer ${key}` } });
@@ -207,5 +209,74 @@ describe('OAuth callback', () => {
       headers: { cookie },
     });
     expect(replay.headers.location).toBe(`${WEB}/connect/error?reason=invalid_state`);
+  });
+
+  describe('failure after a successful code exchange revokes the new refresh token at Zoho', () => {
+    // Zoho keeps at most 20 refresh tokens per user per client and silently drops the oldest: an abandoned
+    // connect must not keep one alive (it could evict the token of the merchant's working connection).
+    async function callback(app: Awaited<ReturnType<typeof setup>>['app']) {
+      const s = await start(app);
+      const state = new URL(String(s.headers.location)).searchParams.get('state') ?? '';
+      return app.inject({
+        method: 'GET',
+        url: callbackUrl({
+          code: GOOD_CODE,
+          state,
+          location: 'in',
+          'accounts-server': ZOHO_DATA_CENTERS.in.accountsServer,
+        }),
+        headers: { cookie: cookieOf(s.headers['set-cookie']) },
+      });
+    }
+
+    it('no organization → no_organization, token revoked, nothing stored', async () => {
+      const { app, ctx, upstream, logs } = await setup();
+      upstream.state.organizations = 'empty';
+      let tenantsCreated = 0;
+      const create = ctx.stores.tenants.create.bind(ctx.stores.tenants);
+      ctx.stores.tenants.create = (input) => {
+        tenantsCreated += 1;
+        return create(input);
+      };
+      const res = await callback(app);
+      expect(res.headers.location).toBe(`${WEB}/connect/error?reason=no_organization`);
+      expect(upstream.revokes()).toEqual([
+        expect.objectContaining({
+          host: new URL(ZOHO_DATA_CENTERS.in.accountsServer).host,
+          revokedToken: REFRESH_TOKEN,
+        }),
+      ]);
+      expect(tenantsCreated).toBe(0);
+      expect(logs.text()).not.toContain(REFRESH_TOKEN);
+    });
+
+    it('an unreadable organizations response → exchange_failed and the token is revoked', async () => {
+      const { app, upstream } = await setup();
+      upstream.state.organizations = 'malformed';
+      const res = await callback(app);
+      expect(res.headers.location).toBe(`${WEB}/connect/error?reason=exchange_failed`);
+      expect(upstream.revokes()).toHaveLength(1);
+      expect(upstream.revokes()[0]?.revokedToken).toBe(REFRESH_TOKEN);
+    });
+
+    it('a storage failure → internal and the token is revoked', async () => {
+      const { app, ctx, upstream } = await setup();
+      ctx.stores.apiKeys.create = () => Promise.reject(new Error('db down'));
+      const res = await callback(app);
+      expect(res.headers.location).toBe(`${WEB}/connect/error?reason=internal`);
+      expect(upstream.revokes()).toHaveLength(1);
+      expect(upstream.revokes()[0]?.revokedToken).toBe(REFRESH_TOKEN);
+    });
+
+    it('revoke is best effort: a Zoho outage still ends on the same error page', async () => {
+      const { app, upstream, logs } = await setup();
+      upstream.state.organizations = 'empty';
+      upstream.state.revokeFails = true;
+      const res = await callback(app);
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toBe(`${WEB}/connect/error?reason=no_organization`);
+      expect(upstream.revokes().length).toBeGreaterThanOrEqual(1);
+      expect(logs.text()).not.toContain(REFRESH_TOKEN);
+    });
   });
 });

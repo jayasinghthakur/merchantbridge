@@ -21,7 +21,7 @@ export const STATIC_TOOLS: readonly StaticTool[] = [
   {
     name: 'zoho_get_connection_status',
     summary:
-      'Organization, data center, plan, granted scopes, remaining daily budget and circuit state.',
+      'Organization, data center, plan, requested scopes, remaining daily budget and circuit state.',
   },
   {
     name: 'zoho_get_invoice',
@@ -42,7 +42,7 @@ export const STATIC_TOOLS: readonly StaticTool[] = [
   {
     name: 'zoho_list_sales_orders',
     summary:
-      'Sales orders, newest first, filtered by customer, status or date within the most recent orders.',
+      'Sales orders filtered by customer, status or date within the first 600 orders Zoho returns (believed newest first).',
   },
   {
     name: 'zoho_search_customers',

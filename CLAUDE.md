@@ -12,7 +12,8 @@ It is a Razorpay FDE take-home (Option 3) and v1 of a real product. The full pla
 2. **Every Zoho call goes ZohoClient → Governor.** Nothing else may reference `zohoapis` (a test enforces this).
 3. **MCP is a thin door.** Tools go through `ToolRuntime` (packages/core); no `fetch` in tools or in apps/api routes.
 4. **Exactly one `usage_event` per tool call**, success or error.
-5. **Tenant isolation:** every DB row, cache key and governor key includes the tenant (or `demo:{session}`).
+5. **Tenant isolation:** every DB row and cache key includes the tenant (or `demo:{session}`). The live governor is
+   keyed per Zoho organization (`zoho:<dc>:<org>`), because Zoho's quotas are per org and shared by every tenant of it.
 6. **Public routes are demo-only.** `/mcp/demo` and the playground are bound to the demo tenant + FakeZoho and can
    never load real credentials.
 7. **Never read, print or commit secrets.** `.env*` is off-limits. Never log tokens, auth codes, client secrets, or

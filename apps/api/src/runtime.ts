@@ -151,8 +151,13 @@ export function createLiveResolver(deps: LiveResolverDeps) {
     }
     const dc = getDataCenter(conn.dc);
     const apiDomain = isKnownApiDomain(conn.apiDomain) ? conn.apiDomain : dc.apiDomain;
-    const key = `zoho:${conn.tenantId}:${conn.organizationId}`;
-    const scope: GovernorScope = { key, profile: zohoRateProfile(planOf(conn.plan)) };
+    // Zoho's per-minute, daily and concurrency limits are per organization, and every OAuth connect creates a new
+    // tenant, so several tenants can share one org: the governor budget is keyed by DC + org, never by tenant.
+    // Cache keys stay tenant-scoped (cached bodies are per-tenant data).
+    const scope: GovernorScope = {
+      key: `zoho:${conn.dc}:${conn.organizationId}`,
+      profile: zohoRateProfile(planOf(conn.plan)),
+    };
     const client = createZohoApi({
       fetch: deps.fetch,
       apiDomain,
@@ -164,7 +169,7 @@ export function createLiveResolver(deps: LiveResolverDeps) {
       governor: deps.governor,
       scope,
       cache: deps.cache,
-      cacheKeyPrefix: `${key}:`,
+      cacheKeyPrefix: `zoho:${conn.tenantId}:${conn.organizationId}:`,
       note: onDecision,
       webBaseUrl: dc.inventoryWebHost,
       connection: {

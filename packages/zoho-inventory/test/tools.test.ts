@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { DEMO_INJECTION } from '../src/fake/dataset';
+import { ZOHO_SCOPES } from '../src/scopes';
 import { classifyReference } from '../src/tools/find-by-payment-reference';
+import { datesNonIncreasing } from '../src/tools/shared';
 import { MapCache, dataOf, errorOf, harness } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose access into JSON results under test
 type Json = Record<string, any>;
+
+describe('datesNonIncreasing (scan order check)', () => {
+  it('holds across page boundaries and skips undated rows', () => {
+    expect(datesNonIncreasing(['2026-10-03', '2026-10-03', null, '2026-09-30'])).toBe(true);
+    expect(datesNonIncreasing([])).toBe(true);
+    // Page 1 ends on 10-02, page 2 starts on 10-04: not newest first overall.
+    expect(datesNonIncreasing(['2026-10-03', '2026-10-02', '2026-10-04'])).toBe(false);
+  });
+});
 
 describe('classifyReference', () => {
   it.each([
@@ -103,6 +114,7 @@ describe('zoho_list_sales_orders', () => {
       scanned: 25,
       max_scanned: 600,
       more_beyond_scan: false,
+      order_verified: true,
     });
     const second = dataOf<Json>(
       await h.call('zoho_list_sales_orders', {
@@ -113,6 +125,27 @@ describe('zoho_list_sales_orders', () => {
     );
     expect(second.sales_orders).toHaveLength(2);
     expect(second.sales_orders.every((s: Json) => s.status === 'void')).toBe(true);
+  });
+
+  it('reports order_verified: false when Zoho returns the scanned orders oldest first', async () => {
+    // salesorders.yml documents no sort parameter, so the scan must check the order it was given.
+    const oldestFirst =
+      (inner: typeof fetch): typeof fetch =>
+      async (input, init) => {
+        const res = await inner(input, init);
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        if (!url.pathname.endsWith('/salesorders')) return res;
+        const body = (await res.json()) as { salesorders: unknown[] };
+        body.salesorders.reverse();
+        return new Response(JSON.stringify(body), { status: res.status, headers: res.headers });
+      };
+    const data = dataOf<Json>(
+      await harness({ wrapFetch: oldestFirst }).call('zoho_list_sales_orders', { status: 'void' }),
+    );
+    expect(data.scan).toMatchObject({ bounded: true, order_verified: false });
+    // Matches are still returned newest first.
+    const dates = data.sales_orders.map((s: Json) => s.date);
+    expect(dates).toEqual([...dates].sort().reverse());
   });
 
   it('rejects a cursor replayed against different filters or tampered with', async () => {
@@ -197,7 +230,14 @@ describe('faults through the full tool path', () => {
     const h = harness({ faults: new Set(['daily_quota_45']) });
     const data = dataOf<Json>(await h.call('zoho_get_connection_status', {}));
     expect(data.upstream.reachable).toBe(false);
-    expect(data.scopes_missing).toEqual([]);
     expect(data.read_only).toBe(true);
+  });
+
+  it('connection status reports the scopes it requested, never claiming to know what Zoho granted', async () => {
+    const data = dataOf<Json>(await harness().call('zoho_get_connection_status', {}));
+    expect(data.scopes_requested).toEqual([...ZOHO_SCOPES]);
+    // Zoho's token response does not say which scopes were granted, so the tool must not claim either list.
+    expect(data).not.toHaveProperty('scopes_granted');
+    expect(data).not.toHaveProperty('scopes_missing');
   });
 });

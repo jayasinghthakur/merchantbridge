@@ -8,6 +8,8 @@ export interface UpstreamCall {
   host: string;
   path: string;
   grantType?: string | null;
+  /** The `token` form field of a revoke request (test-only fake secret). */
+  revokedToken?: string | null;
 }
 
 /**
@@ -20,7 +22,13 @@ export function createLiveUpstream() {
   const calls: UpstreamCall[] = [];
   const accounts = new URL(ZOHO_DATA_CENTERS.in.accountsServer).host;
   const api = new URL(ZOHO_DATA_CENTERS.in.apiDomain).host;
-  const state = { refreshFails: false, exchangeFails: false, revokeFails: false };
+  const state = {
+    refreshFails: false,
+    exchangeFails: false,
+    revokeFails: false,
+    /** What GET /organizations answers: the demo org, an empty list, or a body that fails our schema. */
+    organizations: 'ok' as 'ok' | 'empty' | 'malformed',
+  };
 
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -58,13 +66,21 @@ export function createLiveUpstream() {
       return json(400, { error: 'unsupported_grant_type' });
     }
     if (url.host === accounts && url.pathname === '/oauth/v2/revoke/token') {
-      calls.push({ host: url.host, path: url.pathname });
+      const params = new URLSearchParams(typeof init?.body === 'string' ? init.body : '');
+      calls.push({ host: url.host, path: url.pathname, revokedToken: params.get('token') });
       return state.revokeFails
         ? json(503, { error: 'unavailable' })
         : json(200, { status: 'success' });
     }
     if (url.host === api) {
       calls.push({ host: url.host, path: url.pathname });
+      if (url.pathname === '/inventory/v1/organizations' && state.organizations !== 'ok') {
+        return json(200, {
+          code: 0,
+          message: 'success',
+          organizations: state.organizations === 'empty' ? [] : 'not-a-list',
+        });
+      }
       return fake.fetch(input, init);
     }
     throw new Error(`unexpected outbound fetch in test: ${url.origin}`);
@@ -76,6 +92,7 @@ export function createLiveUpstream() {
     calls,
     state,
     tokenCalls: (grant: string) => calls.filter((c) => c.grantType === grant).length,
+    revokes: () => calls.filter((c) => c.path === '/oauth/v2/revoke/token'),
     apiCalls: () => calls.filter((c) => c.host === api).length,
   };
 }

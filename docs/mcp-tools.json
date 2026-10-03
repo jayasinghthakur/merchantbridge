@@ -913,7 +913,7 @@
     {
       "name": "zoho_get_connection_status",
       "title": "Zoho connection status",
-      "description": "Returns the health of the Zoho Inventory connection: organization name and currency, data center, plan, granted and missing scopes, whether Zoho is reachable, and the rate governor state (calls left today, circuit breaker). Use when another tool returned RECONNECT_REQUIRED, RATE_LIMITED or DAILY_QUOTA_EXHAUSTED, or the user asks which Zoho org is connected. Don't use to look up business data (use the search/list/get tools instead). Costs 1 live upstream call (never cached). Read-only: cannot create, change or delete anything in Zoho.",
+      "description": "Returns the health of the Zoho Inventory connection: organization name and currency, data center, plan, the read scopes requested at connect, whether Zoho is reachable, and the rate governor state (calls left today, circuit breaker). Use when another tool returned RECONNECT_REQUIRED, RATE_LIMITED or DAILY_QUOTA_EXHAUSTED, or the user asks which Zoho org is connected. Don't use to look up business data (use the search/list/get tools instead). Costs 1 live upstream call (never cached). Read-only: cannot create, change or delete anything in Zoho.",
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -982,17 +982,12 @@
                   "null"
                 ]
               },
-              "scopes_granted": {
+              "scopes_requested": {
                 "type": "array",
                 "items": {
                   "type": "string"
-                }
-              },
-              "scopes_missing": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
+                },
+                "description": "Read scopes MerchantBridge asked for when the merchant connected. Zoho does not report which were granted; a missing grant shows up as SCOPE_NOT_GRANTED from the tool that needs it."
               },
               "upstream": {
                 "type": "object",
@@ -1065,8 +1060,7 @@
               "dc",
               "organization",
               "plan",
-              "scopes_granted",
-              "scopes_missing",
+              "scopes_requested",
               "upstream",
               "governor",
               "read_only"
@@ -1822,7 +1816,7 @@
     {
       "name": "zoho_get_sales_order",
       "title": "Get sales order",
-      "description": "Returns one sales order with its line items, shipments (package, carrier, tracking number, shipment date, delivered flag, courier status) and linked invoices (status, due date, balance), all in one upstream call. Use when the user asks about a specific order, what was shipped, tracking or delivery status, or to build dispute evidence after zoho_find_by_payment_reference. Don't use to list or filter many orders (use zoho_list_sales_orders). Pass exactly one of salesorder_id or salesorder_number; lookup by number scans the 600 most recent orders. Read-only: cannot create, change or delete anything in Zoho.",
+      "description": "Returns one sales order with its line items, shipments (package, carrier, tracking number, shipment date, delivered flag, courier status) and linked invoices (status, due date, balance), all in one upstream call. Use when the user asks about a specific order, what was shipped, tracking or delivery status, or to build dispute evidence after zoho_find_by_payment_reference. Don't use to list or filter many orders (use zoho_list_sales_orders). Pass exactly one of salesorder_id or salesorder_number; lookup by number scans the first 600 orders Zoho returns (believed newest first). Read-only: cannot create, change or delete anything in Zoho.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2712,7 +2706,7 @@
     {
       "name": "zoho_list_sales_orders",
       "title": "List sales orders",
-      "description": "Lists sales orders newest first: salesorder_id, number, date, status, customer, total (minor units). Optional filters: customer_id, status (void = cancelled) and date range. Zoho documents no server-side filters for sales orders, so filtered queries only check the 600 most recent orders; data.scan.more_beyond_scan says when older orders were not checked. Use when the user asks for a customer's order history (get customer_id from zoho_search_customers first), cancellations, or orders in a status/date range. Don't use for one order's line items, shipments or tracking (use zoho_get_sales_order). Read-only: cannot create, change or delete anything in Zoho.",
+      "description": "Lists sales orders: salesorder_id, number, date, status, customer, total (minor units). Optional filters: customer_id, status (void = cancelled) and date range. Zoho documents no server-side filters or sort for sales orders, so filtered queries only check the first 600 orders Zoho returns (believed newest first; see data.scan.order_verified) and return matches newest first; data.scan.more_beyond_scan says when further orders were not checked. Use when the user asks for a customer's order history (get customer_id from zoho_search_customers first), cancellations, or orders in a status/date range. Don't use for one order's line items, shipments or tracking (use zoho_get_sales_order). Read-only: cannot create, change or delete anything in Zoho.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2874,7 +2868,7 @@
                         "type": "integer",
                         "minimum": -9007199254740991,
                         "maximum": 9007199254740991,
-                        "description": "Most recent orders checked against the filters."
+                        "description": "Orders checked against the filters: the first ones Zoho returned."
                       },
                       "max_scanned": {
                         "type": "integer",
@@ -2883,14 +2877,19 @@
                       },
                       "more_beyond_scan": {
                         "type": "boolean",
-                        "description": "True when older orders exist that were not checked."
+                        "description": "True when Zoho has more orders that were not checked."
+                      },
+                      "order_verified": {
+                        "type": "boolean",
+                        "description": "True when the scanned orders came newest first (dates never increase), so the scan covered the most recent orders. False means Zoho returned them in another order: unchecked orders may be newer."
                       }
                     },
                     "required": [
                       "bounded",
                       "scanned",
                       "max_scanned",
-                      "more_beyond_scan"
+                      "more_beyond_scan",
+                      "order_verified"
                     ],
                     "additionalProperties": false
                   },
@@ -2898,7 +2897,7 @@
                     "type": "null"
                   }
                 ],
-                "description": "Present when filters were applied by scanning recent orders."
+                "description": "Present when filters were applied by scanning the first orders Zoho returns."
               }
             },
             "required": [

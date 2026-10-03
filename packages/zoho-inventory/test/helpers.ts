@@ -126,17 +126,25 @@ export function apiDeps(
 }
 
 export function harness(
-  opts: { faults?: Set<DemoFault>; retries?: number; cache?: Cache; dataset?: DemoDataset } = {},
+  opts: {
+    faults?: Set<DemoFault>;
+    retries?: number;
+    cache?: Cache;
+    dataset?: DemoDataset;
+    /** Wraps FakeZoho's fetch, e.g. to rewrite a response the fake cannot produce. */
+    wrapFetch?: (inner: typeof fetch) => typeof fetch;
+  } = {},
 ) {
   const faults = opts.faults ?? new Set<DemoFault>();
   const dataset = opts.dataset ?? createDemoDataset({ now: NOW });
   const fake = createFakeZoho({ dataset, faults: () => faults });
+  const upstreamFetch = opts.wrapFetch ? opts.wrapFetch(fake.fetch) : fake.fetch;
   const governor = new StubGovernor({ retries: opts.retries ?? 0 });
   const events: UsageEvent[] = [];
   const makeApi = (note: (d: GovernorDecision) => void): ZohoApi =>
     createZohoApi(
       apiDeps({
-        fetch: fake.fetch,
+        fetch: upstreamFetch,
         tokens: fake.tokens,
         governor,
         note,

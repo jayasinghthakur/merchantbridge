@@ -7,7 +7,7 @@ export const DAY_KEY_TTL_MS = 26 * 60 * 60 * 1000;
 /** Consecutive-failure counters are dropped after a quiet day. */
 export const FAILS_TTL_MS = 24 * 60 * 60 * 1000;
 
-/** All Kv keys for one scope. `scopeKey` already carries the tenant/org or `demo:{session}`. */
+/** All Kv keys for one scope. `scopeKey` already carries the upstream org (`zoho:{dc}:{org}`) or `demo:{session}`. */
 export interface GovernorKeys {
   /** zset: member = attempt id, score = admission time (sliding per-minute log). */
   minute: string;

@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { ProtocolError } from '@modelcontextprotocol/client';
-import { DEMO_IDS } from '@mb/core';
+import { DEMO_FAULTS, DEMO_IDS } from '@mb/core';
 import { DEMO_TENANT_ID } from '@mb/db';
 import { buildApp, createAppParts } from '../src/app';
 import type { AppContext } from '../src/context';
+import { ipSessionId } from '../src/demo';
 import { TRACE_META_KEY } from '../src/mcp';
 import type { Json } from './helpers';
-import { routeClient, sessionId, structured, testContext } from './helpers';
+import { demoClient, routeClient, sessionId, structured, testContext } from './helpers';
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
@@ -53,6 +54,16 @@ describe.each(['auto', 'legacy'] as const)(
       expect(item?.annotations?.readOnlyHint).toBe(true);
       const again = await client.listTools();
       expect(again.tools.map((t) => t.name)).toEqual(expected);
+    });
+
+    it('advertises a static tool list (tools.listChanged: false)', async () => {
+      const { app } = await setup();
+      const client = await routeClient(app, '/mcp/demo', {
+        negotiation,
+        headers: { 'x-mb-session': sessionId() },
+      });
+      cleanup.push(() => client.close());
+      expect(client.getServerCapabilities()?.tools).toEqual({ listChanged: false });
     });
 
     it('every scenario tool call succeeds against FakeZoho', async () => {
@@ -173,6 +184,36 @@ describe.each(['auto', 'legacy'] as const)(
       expect(trace.decisions.some((d: Json) => d.type === 'circuit_open')).toBe(true);
     });
 
+    it('the trace echoes the applied session id and faults', async () => {
+      const { app } = await setup();
+      const session = sessionId();
+      const client = await routeClient(app, '/mcp/demo', {
+        negotiation,
+        headers: { 'x-mb-session': session, 'x-mb-faults': 'server_5xx, concurrency_1070' },
+      });
+      cleanup.push(() => client.close());
+      const res = await client.callTool({
+        name: 'zoho_get_item',
+        arguments: { sku: DEMO_IDS.sku },
+      });
+      const trace = (res._meta as Json)[TRACE_META_KEY];
+      expect(trace.session).toBe(session);
+      expect(trace.faults).toEqual(['concurrency_1070', 'server_5xx']);
+
+      const plain = await routeClient(app, '/mcp/demo', {
+        negotiation,
+        remoteAddress: '203.0.113.77',
+      });
+      cleanup.push(() => plain.close());
+      const res2 = await plain.callTool({
+        name: 'zoho_get_item',
+        arguments: { sku: DEMO_IDS.sku },
+      });
+      const trace2 = (res2._meta as Json)[TRACE_META_KEY];
+      expect(trace2.session).toBe(ipSessionId('203.0.113.77'));
+      expect(trace2.faults).toEqual([]);
+    });
+
     it('expired_token → succeeds after a token refresh', async () => {
       const { app } = await setup();
       const session = sessionId();
@@ -187,6 +228,20 @@ describe.each(['auto', 'legacy'] as const)(
       const trace = (res._meta as Json)[TRACE_META_KEY];
       // 401 attempt + retry with the refreshed token: two admitted upstream attempts.
       expect(trace.upstream_calls).toBe(2);
+      // The refresh and the retry it caused are visible in the trace and counted as a retry.
+      expect(trace.decisions.map((d: Json) => d.type)).toEqual([
+        'admitted',
+        'token_refreshed',
+        'retried',
+        'admitted',
+      ]);
+      expect(trace.decisions[2]).toEqual({
+        type: 'retried',
+        attempt: 2,
+        reason: 'token_refreshed',
+        backoff_ms: 0,
+      });
+      expect(trace.retries).toBeGreaterThanOrEqual(1);
       // Later calls in the same session use the refreshed token directly.
       const again = await client.callTool({ name: 'zoho_get_connection_status', arguments: {} });
       expect((again._meta as Json)[TRACE_META_KEY].upstream_calls).toBe(1);
@@ -227,6 +282,101 @@ describe.each(['auto', 'legacy'] as const)(
     });
   },
 );
+
+function demoPost(app: FastifyInstance, headers: Record<string, string>) {
+  return app.inject({
+    method: 'POST',
+    url: '/mcp/demo',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+      ...headers,
+    },
+    payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+  });
+}
+
+describe('demo fault headers are applied or refused, never silently dropped', () => {
+  it('an unknown fault name → 400 BAD_REQUEST naming it and listing the valid faults', async () => {
+    const { app } = await setup();
+    const res = await demoPost(app, {
+      'x-mb-session': sessionId(),
+      'x-mb-faults': 'rate_limit_44,meteor_strike',
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error.code).toBe('BAD_REQUEST');
+    expect(body.error.message).toContain('meteor_strike');
+    for (const f of DEMO_FAULTS) expect(body.error.message).toContain(f);
+  });
+
+  it('faults without a valid client X-MB-Session → 400 explaining the session rule', async () => {
+    const { app } = await setup();
+    const cases: Record<string, string>[] = [
+      { 'x-mb-faults': 'rate_limit_44' },
+      { 'x-mb-faults': 'rate_limit_44', 'x-mb-session': 'short' },
+      { 'x-mb-faults': 'rate_limit_44', 'x-mb-session': 'has spaces in it' },
+      // ip- ids are server-reserved: a client cannot name (and poison) a per-IP session.
+      { 'x-mb-faults': 'rate_limit_44', 'x-mb-session': ipSessionId('203.0.113.5') },
+    ];
+    for (const headers of cases) {
+      const res = await demoPost(app, headers);
+      expect(res.statusCode).toBe(400);
+      const body = res.json();
+      expect(body.error.code).toBe('BAD_REQUEST');
+      expect(body.error.message).toMatch(/X-MB-Session/);
+      expect(body.error.message).toMatch(/8-64/);
+      expect(body.error.message).toMatch(/ip-/);
+    }
+  });
+
+  it('echoes the applied faults in X-MB-Applied-Faults (and "none")', async () => {
+    const { app } = await setup();
+    const faulted = await demoPost(app, {
+      'x-mb-session': sessionId(),
+      'x-mb-faults': 'rate_limit_44',
+    });
+    expect(faulted.statusCode).toBe(200);
+    expect(faulted.headers['x-mb-applied-faults']).toBe('rate_limit_44');
+
+    const plain = await demoPost(app, { 'x-mb-session': sessionId() });
+    expect(plain.statusCode).toBe(200);
+    expect(plain.headers['x-mb-applied-faults']).toBe('none');
+
+    // An empty header is "no faults", not an error.
+    const empty = await demoPost(app, { 'x-mb-faults': '' });
+    expect(empty.statusCode).toBe(200);
+    expect(empty.headers['x-mb-applied-faults']).toBe('none');
+  });
+
+  it('in-process callers (explorer, playground, evals) get the same rules: a bad fault header fails loudly', async () => {
+    const { parts } = await setup();
+    const attempt = async (opts: { session?: string; faults: string[] }) => {
+      const client = await demoClient(parts.demo.handler, opts);
+      cleanup.push(() => client.close());
+      return client.callTool({ name: 'zoho_get_item', arguments: { sku: DEMO_IDS.sku } });
+    };
+    await expect(attempt({ session: sessionId(), faults: ['meteor_strike'] })).rejects.toThrow();
+    await expect(attempt({ faults: ['rate_limit_44'] })).rejects.toThrow();
+    const ok = await attempt({ session: sessionId(), faults: ['rate_limit_44'] });
+    expect(structured(ok).error.code).toBe('RATE_LIMITED');
+  });
+
+  it('browsers may read X-MB-Applied-Faults (CORS exposed header)', async () => {
+    const { app } = await setup();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mcp/demo',
+      headers: {
+        origin: 'https://some-host.example',
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+    });
+    expect(String(res.headers['access-control-expose-headers'])).toContain('x-mb-applied-faults');
+  });
+});
 
 describe('demo MCP HTTP behaviour', () => {
   it('GET and DELETE on /mcp/demo answer 405', async () => {

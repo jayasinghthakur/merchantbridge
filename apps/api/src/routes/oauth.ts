@@ -1,6 +1,7 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import type { ConnectSuccess } from '@mb/auth';
 import {
   buildAuthorizeUrl,
   completeConnect,
@@ -126,6 +127,36 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
     return reply.redirect(url, 302);
   });
 
+  /**
+   * Best-effort revoke of a refresh token we were just issued but will not keep. Zoho keeps at most 20 refresh
+   * tokens per user per client and silently drops the oldest, so an abandoned connect must not hold one (it could
+   * evict the token behind the merchant's working connection). Never throws; never logs the token.
+   */
+  async function revokeAbandoned(issued: ConnectSuccess, log: FastifyBaseLogger): Promise<void> {
+    const auth = ctx.auth;
+    if (!auth) return;
+    try {
+      const outcome = await auth.oauth.revoke({
+        token: auth.vault.decrypt(issued.refreshTokenEnc),
+        accountsServer: issued.accountsServer,
+      });
+      log.info(
+        { oauth: 'callback', dc: issued.dc, revoke: outcome },
+        'revoked abandoned refresh token',
+      );
+    } catch (e) {
+      log.warn(
+        {
+          oauth: 'callback',
+          dc: issued.dc,
+          err_name: e instanceof Error ? e.name : typeof e,
+          error_code: isConnectorError(e) ? e.code : undefined,
+        },
+        'could not revoke abandoned refresh token',
+      );
+    }
+  }
+
   app.get(API_ROUTES.oauthCallback, async (request: FastifyRequest, reply: FastifyReply) => {
     const query = (request.query ?? {}) as Record<string, unknown>;
     const auth = ctx.auth;
@@ -148,6 +179,12 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       return fail(reply, 'invalid_state');
     }
 
+    // Set once Zoho has issued a refresh token; every exit before the merchant gets a key revokes it.
+    let issued: ConnectSuccess | null = null;
+    const abandon = async (reason: ConnectErrorReason): Promise<FastifyReply> => {
+      if (issued) await revokeAbandoned(issued, request.log);
+      return fail(reply, reason);
+    };
     try {
       const result = await completeConnect({
         query,
@@ -157,6 +194,7 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
         log: ctx.coreLog,
       });
       if (!result.ok) return fail(reply, result.reason);
+      issued = result;
 
       // ALL Zoho reads go through ZohoClient + governor, including this one-off organizations lookup.
       const dc = getDataCenter(result.dc);
@@ -184,10 +222,10 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       });
       const res = await api.get('organizations');
       const parsedOrgs = organizationsSchema.safeParse(res.body);
-      if (!parsedOrgs.success) return fail(reply, 'exchange_failed');
+      if (!parsedOrgs.success) return await abandon('exchange_failed');
       const orgs = parsedOrgs.data.organizations;
       const org = orgs.find((o) => o.is_default_org === true) ?? orgs[0];
-      if (!org) return fail(reply, 'no_organization');
+      if (!org) return await abandon('no_organization');
       const orgName = org.name ?? null;
 
       const tenant = await ctx.stores.tenants.create({
@@ -209,6 +247,8 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
       await auth.tokens.primeAccessToken(conn, result.accessToken, result.expiresInS);
       const key = generateApiKey();
       await ctx.stores.apiKeys.create({ tenantId: tenant.id, prefix: key.prefix, hash: key.hash });
+      // Committed: the stored connection now owns the refresh token.
+      issued = null;
 
       request.log.info(
         {
@@ -232,14 +272,13 @@ export function registerOAuthRoutes(app: FastifyInstance, ctx: AppContext): void
         'zoho connect failed',
       );
       if (isConnectorError(e)) {
-        return fail(
-          reply,
+        return abandon(
           e.code === 'RECONNECT_REQUIRED' || e.code === 'SCOPE_NOT_GRANTED'
             ? 'exchange_failed'
             : 'internal',
         );
       }
-      return fail(reply, 'internal');
+      return abandon('internal');
     }
   });
 }

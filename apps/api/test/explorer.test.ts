@@ -76,6 +76,25 @@ describe('POST /api/explorer/call', () => {
     expect(out.decisions).toEqual([]);
   });
 
+  it("rejects unknown body keys by name (e.g. 'arguments' instead of 'args') instead of ignoring them", async () => {
+    const { app } = await setup();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/explorer/call',
+      payload: {
+        tool: 'zoho_get_item',
+        arguments: { sku: DEMO_IDS.sku },
+        session_id: sessionId('ex'),
+        faults: [],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error.code).toBe('BAD_REQUEST');
+    expect(body.error.message).toContain('arguments');
+    expect(body.error.message).toContain('args');
+  });
+
   it('validates the body and rate limits at 30 per minute per IP', async () => {
     const { app } = await setup();
     const bad = await app.inject({

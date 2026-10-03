@@ -43,6 +43,13 @@ export function decisionChip(d: GovernorDecision, nowMs: number): DecisionChip {
       };
     }
     case 'retried':
+      if (d.reason === 'token_refreshed') {
+        return {
+          label: 'retried after token refresh',
+          tone: 'warn',
+          detail: `Attempt ${d.attempt} sent with the refreshed access token.`,
+        };
+      }
       return {
         label: `retried ${d.reason} · ${d.backoff_ms}ms`,
         tone: 'warn',
@@ -70,6 +77,13 @@ export function decisionChip(d: GovernorDecision, nowMs: number): DecisionChip {
         label: 'coalesced',
         tone: 'brand',
         detail: 'Shared an identical in-flight upstream request.',
+      };
+    case 'token_refreshed':
+      return {
+        label: 'token refreshed',
+        tone: 'neutral',
+        detail:
+          'Zoho rejected the access token (401); it was refreshed and the request retried once.',
       };
   }
 }

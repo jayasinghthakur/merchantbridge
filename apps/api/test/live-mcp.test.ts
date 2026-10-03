@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { ZOHO_DATA_CENTERS, generateApiKey } from '@mb/auth';
-import { DEMO_IDS } from '@mb/core';
+import { DEMO_IDS, zohoRateProfile } from '@mb/core';
 import { DEMO_TENANT_ID, createMemoryStores } from '@mb/db';
 import { DEMO_ORGANIZATION_ID, ZOHO_SCOPES } from '@mb/zoho-inventory';
 import { buildApp } from '../src/app';
@@ -29,7 +29,12 @@ async function setup(opts: { stores?: ReturnType<typeof createMemoryStores> } = 
   return { ctx, app, upstream, logs };
 }
 
-async function seedTenant(ctx: AppContext, name: string, withConnection: boolean) {
+async function seedTenant(
+  ctx: AppContext,
+  name: string,
+  withConnection: boolean,
+  organizationId: string = DEMO_ORGANIZATION_ID,
+) {
   const tenant = await ctx.stores.tenants.create({ name, kind: 'live' });
   const conn = withConnection
     ? await ctx.stores.connections.upsert({
@@ -38,7 +43,7 @@ async function seedTenant(ctx: AppContext, name: string, withConnection: boolean
         dc: 'in',
         accountsServer: ZOHO_DATA_CENTERS.in.accountsServer,
         apiDomain: ZOHO_DATA_CENTERS.in.apiDomain,
-        organizationId: DEMO_ORGANIZATION_ID,
+        organizationId,
         organizationName: `${name} org`,
         plan: null,
         scopes: [...ZOHO_SCOPES],
@@ -201,5 +206,42 @@ describe('live MCP (/mcp)', () => {
       headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' },
     });
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
+
+describe('rate governor scope (Zoho limits are per organization)', () => {
+  it('tenants of the same org share one minute bucket and daily budget; another org does not', async () => {
+    const { app, ctx } = await setup();
+    // Each OAuth connect creates a tenant, so one org can have several tenants (and keys).
+    const a = await seedTenant(ctx, 'A', true);
+    const b = await seedTenant(ctx, 'B', true);
+    const c = await seedTenant(ctx, 'C', true, '60000000001');
+    const status = async (key: string) => {
+      const client = await routeClient(app, '/mcp', {
+        headers: { authorization: `Bearer ${key}` },
+      });
+      cleanup.push(() => client.close());
+      return structured(
+        await client.callTool({ name: 'zoho_get_connection_status', arguments: {} }),
+      ).data.governor;
+    };
+
+    const ga = await status(a.key);
+    const gb = await status(b.key);
+    expect(ga.used_this_minute).toBe(1);
+    // B's call lands in the bucket A already used: one org, one budget.
+    expect(gb.used_this_minute).toBe(2);
+    expect(gb.budget_remaining_today).toBe(ga.budget_remaining_today - 1);
+
+    // A different org (FakeZoho rejects it, but the attempt is still governed) has its own budget.
+    const gc = await status(c.key);
+    expect(gc.used_this_minute).toBe(1);
+    expect(gc.budget_remaining_today).toBe(ga.budget_remaining_today);
+
+    const profile = zohoRateProfile('free');
+    const shared = await ctx.governor.snapshot({ key: `zoho:in:${DEMO_ORGANIZATION_ID}`, profile });
+    expect(shared.used_this_minute).toBe(2);
+    const other = await ctx.governor.snapshot({ key: 'zoho:in:60000000001', profile });
+    expect(other.used_this_minute).toBe(1);
   });
 });

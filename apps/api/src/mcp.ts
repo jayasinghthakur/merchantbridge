@@ -8,17 +8,21 @@ import type {
   StandardSchemaWithJSON,
 } from '@modelcontextprotocol/server';
 import { CLIENT_INFO_META_KEY, McpServer, createMcpHandler } from '@modelcontextprotocol/server';
-import type { GovernorDecision, Logger, ToolDescriptor, ToolRuntime } from '@mb/core';
+import type { DemoFault, GovernorDecision, Logger, ToolDescriptor, ToolRuntime } from '@mb/core';
 import { noopLogger } from '@mb/core';
 import { DEMO_TENANT_ID } from '@mb/db';
 import type { DemoSession } from './demo';
-import { demoSessionFrom } from './demo';
+import { resolveDemoSession } from './demo';
 import { API_VERSION, SERVER_NAME } from './version';
 
 /** Custom result `_meta` key carrying the governor trace on demo responses (never sent on /mcp). */
 export const TRACE_META_KEY = 'dev.merchantbridge/trace';
 
 export interface TraceMeta {
+  /** The demo session the call ran in (client X-MB-Session, or the server-assigned `ip-…` session). */
+  session: string | null;
+  /** Faults applied to this call (sorted); empty when none. */
+  faults: DemoFault[];
   decisions: GovernorDecision[];
   upstream_calls: number;
   retries: number;
@@ -129,6 +133,8 @@ function registerTools(
         if (demo) {
           const env = r.structuredContent as { meta?: { budget_remaining_today?: number | null } };
           const trace: TraceMeta = {
+            session: bind.demoSession?.id ?? null,
+            faults: [...(bind.demoSession?.faults ?? [])],
             decisions: r.decisions,
             upstream_calls: r.usage.upstream_calls,
             retries: r.usage.retries,
@@ -156,12 +162,21 @@ export function createMcpEndpoint(opts: McpEndpointOptions): McpEndpoint {
 
   const factory = (rctx: McpRequestContext): McpServer => {
     const extra = (rctx.authInfo?.extra ?? {}) as McpAuthExtra;
-    const server = new McpServer({ name: SERVER_NAME, version });
+    // The tool list is static for the life of the process, so never invite clients to subscribe to changes.
+    const server = new McpServer(
+      { name: SERVER_NAME, version },
+      { capabilities: { tools: { listChanged: false } } },
+    );
     if (opts.mode === 'demo') {
       const req = rctx.requestInfo;
-      const session =
-        extra.demoSession ??
-        (req ? demoSessionFrom((n) => req.headers.get(n), 'in-process') : undefined);
+      let session = extra.demoSession;
+      if (!session && req) {
+        // In-process callers (explorer, playground, evals, tests) skip the Fastify route; same rules, and a bad
+        // fault header fails loudly here too instead of being dropped.
+        const resolved = resolveDemoSession((n) => req.headers.get(n), 'in-process');
+        if (!resolved.ok) throw new Error(resolved.message);
+        session = resolved.session;
+      }
       registerTools(server, opts.runtime, tools, {
         mode: 'demo',
         tenantId: DEMO_TENANT_ID,

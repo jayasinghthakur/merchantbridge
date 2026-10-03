@@ -28,20 +28,38 @@ export interface RateProfile {
 }
 
 export interface GovernorScope {
-  /** e.g. `zoho:${tenantId}:${orgId}` or `demo:${sessionId}` */
+  /**
+   * The budget the limits apply to: the upstream's unit of rate limiting, not our tenant. For Zoho that is the
+   * organization (`zoho:${dc}:${orgId}`; tenants connected to the same org share it), or `demo:${sessionId}`.
+   */
   key: string;
   profile: RateProfile;
 }
 
+/**
+ * One step of how a tool call reached the upstream, in order. Emitted by the governor, the cache and the connector
+ * client; ToolRuntime collects them into the trace and derives usage counters from them
+ * (`upstream_calls` = admitted, `retries` = retried, `cache_hits` = cache_hit).
+ *
+ * - `admitted`: an upstream attempt was let through (after `waited_ms` in the queue).
+ * - `queued`: the attempt waited for the per-minute bucket or a concurrency slot.
+ * - `retried`: attempt number `attempt` follows a failed one after `backoff_ms`. `reason` is the failure class
+ *   (`concurrency`, `server`, ...) or `token_refreshed` for the single retry after an access-token refresh.
+ * - `circuit_open`: upstream calls are paused; `until_ms` is an epoch timestamp (ms) at which it may close.
+ * - `rejected`: the governor refused the call without contacting the upstream.
+ * - `cache_hit` / `coalesced`: served from the short-TTL cache / shared an identical in-flight request.
+ * - `token_refreshed`: the upstream rejected the access token (401) and the client refreshed it; always followed
+ *   by a `retried` (reason `token_refreshed`, backoff 0) for the retry with the new token.
+ */
 export type GovernorDecision =
   | { type: 'admitted'; waited_ms: number }
   | { type: 'queued'; reason: 'minute_bucket' | 'concurrency'; wait_ms: number }
   | { type: 'retried'; attempt: number; reason: string; backoff_ms: number }
-  /** `until_ms` is an epoch timestamp (ms) at which the circuit may close. */
   | { type: 'circuit_open'; until_ms: number; reason: string }
   | { type: 'rejected'; code: 'RATE_LIMITED' | 'DAILY_QUOTA_EXHAUSTED'; retry_after_s?: number }
   | { type: 'cache_hit' }
-  | { type: 'coalesced' };
+  | { type: 'coalesced' }
+  | { type: 'token_refreshed' };
 
 export interface GovernorSnapshot {
   budget_remaining_today: number;

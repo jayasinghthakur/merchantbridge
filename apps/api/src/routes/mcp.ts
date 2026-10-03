@@ -6,7 +6,7 @@ import { hashApiKey, looksLikeApiKey } from '@mb/auth';
 import type { ApiErrorResponse } from '@mb/core';
 import { API_ROUTES } from '@mb/core';
 import type { AppContext } from '../context';
-import { demoSessionFrom } from '../demo';
+import { APPLIED_FAULTS_HEADER, appliedFaultsHeader, resolveDemoSession } from '../demo';
 import { clientIp, clientIpKey, copyReplyHeadersToRaw, sendRateLimited } from '../http-util';
 import { createEgressMatcher, hitWindow, peekWindow } from '../infra/limits';
 import type { McpEndpoint } from '../mcp';
@@ -139,8 +139,14 @@ export function registerMcpRoutes(
       if (!lim.allowed) {
         return sendRateLimited(reply, lim.retryAfterS, 'Demo MCP rate limit reached; slow down.');
       }
-      const session = demoSessionFrom((name) => request.headers[name], ipKey);
-      await serve(demoNode, request, reply, demoAuthInfo(session));
+      const resolved = resolveDemoSession((name) => request.headers[name], ipKey);
+      if (!resolved.ok) {
+        return reply.code(400).send({
+          error: { code: 'BAD_REQUEST', message: resolved.message },
+        } satisfies ApiErrorResponse);
+      }
+      reply.header(APPLIED_FAULTS_HEADER, appliedFaultsHeader(resolved.session.faults));
+      await serve(demoNode, request, reply, demoAuthInfo(resolved.session));
     },
   });
 

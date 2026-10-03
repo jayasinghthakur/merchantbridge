@@ -1,3 +1,4 @@
+import type { GovernorDecision } from '@mb/core';
 import { ConnectorError, UpstreamError } from '@mb/core';
 import { describe, expect, it } from 'vitest';
 import type { ZohoTokenSource } from '../src/client';
@@ -348,6 +349,38 @@ describe('ZohoClient token refresh', () => {
       `Zoho-oauthtoken ${SECRET}`,
       `Zoho-oauthtoken ${SECRET}-fresh`,
     ]);
+  });
+
+  it('reports the refresh and the retry in the decision trace (so usage.retries counts it)', async () => {
+    const s = scripted(
+      json(401, { code: 57, message: 'unauthorized' }),
+      json(200, { code: 0, items: [] }),
+    );
+    const decisions: GovernorDecision[] = [];
+    const api = createZohoApi(
+      apiDeps({ fetch: s.fetch, tokens: staticTokens(), note: (d) => decisions.push(d) }),
+    );
+    await api.get('items');
+    expect(decisions).toEqual([
+      { type: 'admitted', waited_ms: 0 },
+      { type: 'token_refreshed' },
+      { type: 'retried', attempt: 2, reason: 'token_refreshed', backoff_ms: 0 },
+      { type: 'admitted', waited_ms: 0 },
+    ]);
+  });
+
+  it('a failed refresh reports no token_refreshed decision', async () => {
+    const s = scripted(json(401, { code: 57, message: 'unauthorized' }));
+    const decisions: string[] = [];
+    const tokens: ZohoTokenSource = {
+      get: () => Promise.resolve(SECRET),
+      refreshAfterUnauthorized: () => Promise.reject(new Error('invalid_grant')),
+    };
+    const api = createZohoApi(
+      apiDeps({ fetch: s.fetch, tokens, note: (d) => decisions.push(d.type) }),
+    );
+    await caught(api.get('items'));
+    expect(decisions).toEqual(['admitted']);
   });
 
   it('a second 401 → RECONNECT_REQUIRED without further refreshes', async () => {

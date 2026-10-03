@@ -10,12 +10,27 @@ import type { FetchHandler, JsonRpcExchange } from '../inprocess';
 import { connectInProcess } from '../inprocess';
 import { TRACE_META_KEY } from '../mcp';
 
-export const explorerRequestSchema = z.object({
+/** Strict: an unknown key (e.g. `arguments` for `args`) is a 400, never silently dropped. */
+export const explorerRequestSchema = z.strictObject({
   tool: z.string().regex(/^[a-z][a-z0-9_]{2,63}$/),
   args: z.record(z.string(), z.unknown()).default({}),
   session_id: z.string().regex(SESSION_ID_RE),
   faults: z.array(z.enum(DEMO_FAULTS)).max(DEMO_FAULTS.length).default([]),
 });
+
+const BODY_FIELDS = Object.keys(explorerRequestSchema.shape);
+
+function badRequestMessage(issue: z.core.$ZodIssue | undefined): string {
+  if (!issue) return 'Invalid request.';
+  if (issue.code === 'unrecognized_keys') {
+    const keys = issue.keys.slice(0, 5).map((k) => JSON.stringify(k.slice(0, 40)));
+    return (
+      `Unknown field(s) ${keys.join(', ')}. The body takes only ${BODY_FIELDS.join(', ')}; ` +
+      'tool arguments go in "args".'
+    );
+  }
+  return `${issue.path.join('.') || 'body'}: ${issue.message}`;
+}
 
 function decisionsOf(response: unknown): GovernorDecision[] {
   const meta = (response as { result?: { _meta?: Record<string, unknown> } } | undefined)?.result
@@ -50,14 +65,8 @@ export function registerExplorerRoute(
 
     const parsed = explorerRequestSchema.safeParse(request.body);
     if (!parsed.success) {
-      const issue = parsed.error.issues[0];
       return reply.code(400).send({
-        error: {
-          code: 'BAD_REQUEST',
-          message: issue
-            ? `${issue.path.join('.') || 'body'}: ${issue.message}`
-            : 'Invalid request.',
-        },
+        error: { code: 'BAD_REQUEST', message: badRequestMessage(parsed.error.issues[0]) },
       } satisfies ApiErrorResponse);
     }
     const body = parsed.data;
