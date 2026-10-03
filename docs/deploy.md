@@ -5,6 +5,12 @@ Step-by-step for the **human** operator. Every service below is used on a free p
 `vercel env` and `fly secrets` are denied to it by `.claude/settings.json`, and Hugging Face secrets are entered in
 the browser. Never paste secret values into issues, PRs, chats or this file.
 
+**Fast path:** run `python3 scripts/setup-deploy.py` yourself from the repo root. It logs the Neon CLI in through your
+browser, applies the migrations, asks for the Upstash URL, Groq key and Hugging Face token with hidden input, creates
+the Space with all its secrets and variables, sets the GitHub secret/variables, triggers the Space deploy and waits for
+`/health/ready`. Re-run with `--skip-neon --web-url <vercel url>` after the Vercel import, and with `--skip-neon --zoho`
+after creating the Zoho PROD client. The sections below are the manual equivalent.
+
 Placeholders used below:
 
 | Placeholder | Meaning                                                                                                                                |
