@@ -21,15 +21,15 @@ function problems(c: unknown): string[] {
   return r.success ? [] : r.error.issues.map((i) => i.message);
 }
 
-describe('the 15 eval cases', () => {
-  it('has the M5 mix: 5 scenario cards, 3 write attempts, 1 injection, 6 tool-specific', () => {
-    expect(ALL_CASES).toHaveLength(15);
+describe('the 17 eval cases', () => {
+  it('has the M5 mix: 5 scenario cards, 3 write attempts, 1 injection, 8 tool-specific', () => {
+    expect(ALL_CASES).toHaveLength(17);
     const count = (k: string) => ALL_CASES.filter((c) => c.kind === k).length;
     expect([count('scenario'), count('refusal'), count('injection'), count('tool')]).toEqual([
-      5, 3, 1, 6,
+      5, 3, 1, 8,
     ]);
     expect([scenarioCases, refusalCases, injectionCases, toolCases].map((l) => l.length)).toEqual([
-      5, 3, 1, 6,
+      5, 3, 1, 8,
     ]);
   });
 
@@ -55,7 +55,7 @@ describe('the 15 eval cases', () => {
 
   it('tool-specific cases each target a different tool', () => {
     const targets = toolCases.map((c) => c.expect.tools[0]);
-    expect(new Set(targets).size).toBe(6);
+    expect(new Set(targets).size).toBe(8);
   });
 });
 

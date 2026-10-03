@@ -141,7 +141,7 @@ describe('main (pnpm evals)', () => {
     expect(b.err[0]).toContain('unknown argument: --nope');
   });
 
-  it('runs all 15 cases on both models through runAgent, scores them and writes the reports', async () => {
+  it('runs all 17 cases on both models through runAgent, scores them and writes the reports', async () => {
     const out = await tempDir();
     const cap = captureIO();
     const d = deps(out, cap.io);
@@ -158,23 +158,23 @@ describe('main (pnpm evals)', () => {
     expect(sonnet).toMatchObject({
       schema: 'merchantbridge-evals/v1',
       model: 'claude-sonnet-5-5',
-      summary: { total: 15, passed: 15, pass_rate: 1 },
+      summary: { total: 17, passed: 17, pass_rate: 1 },
       gate: { min_pass_rate: 0.9, passed: true },
       engine: { name: 'runAgent', tool_choice: 'auto', max_tokens: 4096 },
     });
     expect(sonnet.results.map((r: Json) => r.id)).toEqual(ALL_CASES.map((c) => c.id));
     const md = await readFile(join(out, 'latest.md'), 'utf8');
-    expect(md).toContain('| claude-sonnet-5-5 | 15/15 | 100.0% | PASS (needs ≥ 90.0%) |');
-    expect(md).toContain('| claude-haiku-4-5 | 15/15 | 100.0% | published as-is |');
+    expect(md).toContain('| claude-sonnet-5-5 | 17/17 | 100.0% | PASS (needs ≥ 90.0%) |');
+    expect(md).toContain('| claude-haiku-4-5 | 17/17 | 100.0% | published as-is |');
 
     // Every model request went to the model under test.
     expect(new Set(d.requests.map((r) => r.model))).toEqual(
       new Set(['claude-sonnet-5-5', 'claude-haiku-4-5']),
     );
-    expect(cap.out.join('\n')).toMatch(/^score\s+15\/15 100\.0%\s+15\/15 100\.0%$/m);
+    expect(cap.out.join('\n')).toMatch(/^score\s+17\/17 100\.0%\s+17\/17 100\.0%$/m);
     expect(
-      cap.out.filter((l) => /^\[claude-(sonnet-5-5|haiku-4-5)\] +\d+\/15 \S+: PASS/.test(l)),
-    ).toHaveLength(30);
+      cap.out.filter((l) => /^\[claude-(sonnet-5-5|haiku-4-5)\] +\d+\/17 \S+: PASS/.test(l)),
+    ).toHaveLength(34);
     expect(cap.all()).toContain('ANTHROPIC_API_KEY: set');
     expect(cap.all()).not.toContain(FAKE_KEY);
     expect(md + JSON.stringify(sonnet)).not.toContain(FAKE_KEY);

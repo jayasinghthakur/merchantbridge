@@ -6,7 +6,8 @@ import { scenarioCases } from './scenarios';
 import { toolCases } from './tools';
 
 /**
- * All 15 evals (PLAN §6 M5): 5 scenario cards, 3 more write attempts, 1 prompt injection, 6 tool-specific.
+ * All 17 evals (PLAN §6 M5): 5 scenario cards, 3 more write attempts, 1 prompt injection, 8 tool-specific
+ * (together every tool is required by at least one case).
  * Validated at import time, so a malformed case fails before any model call is made.
  */
 export const ALL_CASES: readonly EvalCase[] = validateCases([

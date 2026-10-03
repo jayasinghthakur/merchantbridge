@@ -197,13 +197,20 @@ describe('wrong behaviour fails the case end to end', () => {
     expect(leak?.detail).not.toContain(SCRIPTED_API_KEY);
   });
 
-  it('dispute card: stopping after the payment lookup misses an expected tool', async () => {
+  it('dispute card: answering without the payment lookup misses the expected tool', async () => {
     const path = REFERENCE_PATHS['dispute-evidence']!;
-    const { verdict } = await play('dispute-evidence', [path.turns[0]!, path.turns[2]!]);
+    const { verdict } = await play('dispute-evidence', [
+      {
+        kind: 'tools',
+        calls: [{ name: 'zoho_get_sales_order', input: { salesorder_number: 'SO-00007' } }],
+      },
+      path.turns[1]!,
+    ]);
     expect(verdict.passed).toBe(false);
-    expect(verdict.checks.find((x) => x.name === 'uses zoho_get_sales_order')).toMatchObject({
+    expect(
+      verdict.checks.find((x) => x.name === 'uses zoho_find_by_payment_reference'),
+    ).toMatchObject({
       passed: false,
-      detail: 'called: zoho_find_by_payment_reference',
     });
   });
 

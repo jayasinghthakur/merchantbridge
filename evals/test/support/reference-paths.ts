@@ -49,7 +49,6 @@ export const REFERENCE_PATHS: Readonly<Record<string, ReferencePath>> = {
   'dispute-evidence': {
     turns: [
       tools(['zoho_find_by_payment_reference', { reference: DEMO_IDS.paymentRef }]),
-      tools(['zoho_get_sales_order', { salesorder_number: 'SO-00007' }]),
       answer(
         `Evidence pack for ${DEMO_IDS.paymentRef}: it paid invoice INV-00005 for sales order SO-00007. ` +
           'Shipped by Delhivery, tracking 1490811234567; courier status: delivered.',
@@ -182,6 +181,36 @@ export const REFERENCE_PATHS: Readonly<Record<string, ReferencePath>> = {
       }),
     ],
     grounding: [`"name":"${DEMO_IDS.orgName}"`, '"budget_remaining_today":', '"read_only":true'],
+  },
+  'tool-check-stock': {
+    turns: [
+      tools(['zoho_check_stock', { skus: [DEMO_IDS.sku, 'ASSAM-500'] }]),
+      answer((ctx) => {
+        const items: Json[] = envelopes(ctx)[0]?.data?.items ?? [];
+        return items
+          .map((i) => {
+            const blr = (i.locations ?? []).find((l: Json) => /Bengaluru/.test(l.location_name));
+            return `- ${i.sku}: ${blr?.available_stock ?? 0} available at Bengaluru Warehouse`;
+          })
+          .join('\n');
+      }),
+    ],
+    grounding: [
+      '"sku":"CHAI-250"',
+      '"sku":"ASSAM-500"',
+      'Bengaluru Warehouse',
+      '"available_stock":38',
+    ],
+  },
+  'tool-get-invoice': {
+    turns: [
+      tools(['zoho_get_invoice', { invoice_number: 'INV-00004' }]),
+      answer((ctx) => {
+        const d = envelopes(ctx)[0]?.data;
+        return `${d.invoice_number} for ${d.customer_name}: ${rupees(d.balance)} still due (due ${d.due_date}, status ${d.status}), for sales order ${d.salesorder?.salesorder_number}.`;
+      }),
+    ],
+    grounding: ['"invoice_number":"INV-00004"', 'Arjun Reddy', '"amount_minor":153332', 'SO-00005'],
   },
 };
 

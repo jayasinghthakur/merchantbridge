@@ -137,6 +137,42 @@ export const toolConnectionStatus: EvalCase = {
   },
 };
 
+/** Bulk stock check: CHAI-250 has 38 available at Bengaluru; ASSAM-500 is also stocked there. */
+export const toolCheckStock: EvalCase = {
+  id: 'tool-check-stock',
+  kind: 'tool',
+  title: 'Bulk stock check for a cart',
+  prompt:
+    'A customer wants CHAI-250 and ASSAM-500 in one order. How many units of each are available at the Bengaluru Warehouse right now?',
+  expect: {
+    tools: ['zoho_check_stock'],
+    maxToolCalls: 3,
+    text: [
+      { type: 'matches', label: 'covers CHAI-250', pattern: /\bCHAI-250\b|\bMasala Chai\b/i },
+      { type: 'matches', label: 'covers ASSAM-500', pattern: /\bASSAM-500\b|\bAssam CTC\b/i },
+      { type: 'matches', label: 'gives the CHAI-250 Bengaluru count (38)', pattern: /\b38\b/ },
+    ],
+  },
+};
+
+/** INV-00004: Arjun Reddy, overdue, ₹1,533.32 balance, for SO-00005. */
+export const toolGetInvoice: EvalCase = {
+  id: 'tool-get-invoice',
+  kind: 'tool',
+  title: 'Get an invoice by its number',
+  prompt:
+    'Pull up invoice INV-00004. Who is the customer, how much is still due, and which sales order is it for?',
+  expect: {
+    tools: ['zoho_get_invoice'],
+    maxToolCalls: 3,
+    text: [
+      { type: 'matches', label: 'names the customer (Arjun Reddy)', pattern: /\bArjun Reddy\b/i },
+      { type: 'matches', label: 'gives the balance (₹1,533.32)', pattern: /1,?533\.32/ },
+      { type: 'matches', label: 'names the sales order SO-00005', pattern: /\bSO-00005\b/ },
+    ],
+  },
+};
+
 export const toolCases: readonly EvalCase[] = [
   toolSearchCustomers,
   toolListOverdueInvoices,
@@ -144,4 +180,6 @@ export const toolCases: readonly EvalCase[] = [
   toolPaymentByUtr,
   toolLowStockItems,
   toolConnectionStatus,
+  toolCheckStock,
+  toolGetInvoice,
 ];
