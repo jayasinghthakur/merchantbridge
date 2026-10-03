@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mb-demo": {
+      "type": "http",
+      "url": "http://localhost:8787/mcp/demo"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    }
+  }
+}

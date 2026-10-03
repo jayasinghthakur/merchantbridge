@@ -1,0 +1,34 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    # Matches pnpm's minimum release age: let fresh releases settle before proposing them.
+    cooldown:
+      default-days: 3
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      # MCP SDK v2 packages are exact-pinned and must move together (one compatibility check per bump).
+      mcp-sdk:
+        patterns:
+          - '@modelcontextprotocol/*'
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci(deps)
+    groups:
+      actions:
+        patterns:
+          - '*'

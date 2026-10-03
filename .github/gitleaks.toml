@@ -1,0 +1,14 @@
+# gitleaks config for .github/workflows/ci.yml (GITLEAKS_CONFIG). Extends the built-in rules.
+title = "merchantbridge"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Vendored third-party API docs: Zoho's pages contain non-functional example client secrets and tokens."
+paths = ['''(^|/)docs/vendor/''']
+
+[[allowlists]]
+description = "Demo fault ids (DEMO_FAULTS in packages/core/src/telemetry.ts) listed after 'expired_token' look like a key/value pair."
+targetRules = ["generic-api-key"]
+regexes = ['''^(rate_limit_44|expired_token|daily_quota_45|concurrency_1070|server_5xx|malformed)$''']

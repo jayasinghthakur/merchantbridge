@@ -1,0 +1,64 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy-api.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: flyctl deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      # Repo variables (Settings → Variables). FLY_CONFIG defaults to the api app's fly.toml.
+      FLY_CONFIG: ${{ vars.FLY_CONFIG || 'apps/api/fly.toml' }}
+      API_URL: ${{ vars.API_URL }}
+    steps:
+      # Secrets cannot be used in `if:` directly, so a first step turns "is the token set?" into an output.
+      - name: Check deploy credentials
+        id: gate
+        run: |
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::notice title=Deploy skipped::FLY_API_TOKEN is not set for this repository; nothing was deployed."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.gate.outputs.deploy == 'true'
+        with:
+          persist-credentials: false
+
+      # Pinned to a master commit: the latest tag (1.5) still runs on node20, which GitHub runners no longer ship.
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+        if: steps.gate.outputs.deploy == 'true'
+
+      # Build context is the repo root so the Dockerfile can copy the whole pnpm workspace.
+      - name: Deploy
+        if: steps.gate.outputs.deploy == 'true'
+        run: |
+          if [ ! -f "$FLY_CONFIG" ]; then
+            echo "::error::$FLY_CONFIG not found. Add the Fly config or set the FLY_CONFIG repository variable."
+            exit 1
+          fi
+          flyctl deploy . --config "$FLY_CONFIG" --remote-only
+
+      - name: Health check
+        if: steps.gate.outputs.deploy == 'true' && env.API_URL != ''
+        run: |
+          curl -fsS --max-time 10 --retry 10 --retry-delay 6 --retry-all-errors "${API_URL%/}/health/ready"
