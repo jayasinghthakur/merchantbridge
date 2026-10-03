@@ -12,3 +12,9 @@ paths = ['''(^|/)docs/vendor/''']
 description = "Demo fault ids (DEMO_FAULTS in packages/core/src/telemetry.ts) listed after 'expired_token' look like a key/value pair."
 targetRules = ["generic-api-key"]
 regexes = ['''^(rate_limit_44|expired_token|daily_quota_45|concurrency_1070|server_5xx|malformed)$''']
+
+[[allowlists]]
+description = "Placeholder API keys in tests and docs (mb_live_TESTKEY, mb_live_YOUR_KEY): not real credentials."
+targetRules = ["curl-auth-header", "generic-api-key"]
+regexTarget = "match"
+regexes = ['''mb_live_(TESTKEY|YOUR_KEY)\b''']
