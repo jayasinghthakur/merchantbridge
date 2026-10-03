@@ -59,7 +59,9 @@ export function CopyButton({
       className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-sm border border-line-strong bg-raised px-2 text-xs font-semibold text-ink-muted transition-colors hover:border-brand hover:text-brand-ink ${className}`}
     >
       {state === 'copied' ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
-      <span aria-live="polite">{state === 'copied' ? 'Copied' : state === 'failed' ? 'Press Ctrl+C' : 'Copy'}</span>
+      <span aria-live="polite">
+        {state === 'copied' ? 'Copied' : state === 'failed' ? 'Press Ctrl+C' : 'Copy'}
+      </span>
     </button>
   );
 }

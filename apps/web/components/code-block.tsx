@@ -36,10 +36,15 @@ export function CodeBlock({
   return (
     <div className="mb-code min-w-0 overflow-hidden" data-testid={testId}>
       <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-1.5">
-        <span className="truncate font-sans text-xs font-semibold text-ink-subtle">{label ?? ''}</span>
+        <span className="truncate font-sans text-xs font-semibold text-ink-subtle">
+          {label ?? ''}
+        </span>
         <CopyButton text={code} label={copyLabel ?? (label ? `Copy ${label}` : 'Copy code')} />
       </div>
-      <pre tabIndex={0} className={`max-h-[28rem] overflow-auto p-3 text-ink ${wrap ? 'whitespace-pre-wrap' : ''}`}>
+      <pre
+        tabIndex={0}
+        className={`max-h-[28rem] overflow-auto p-3 text-ink ${wrap ? 'whitespace-pre-wrap' : ''}`}
+      >
         <code>{wrap ? wrapTokens(code) : code}</code>
       </pre>
     </div>

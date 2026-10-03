@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { mockApi } from './mock-api';
 
-test('home shows the hero, principle table and the demo MCP command from /api/status', async ({ page }) => {
+test('home shows the hero, principle table and the demo MCP command from /api/status', async ({
+  page,
+}) => {
   await mockApi(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
@@ -16,7 +18,9 @@ test('home shows the hero, principle table and the demo MCP command from /api/st
   );
 });
 
-test('tool explorer lists tools, builds args from the schema and shows the raw exchange', async ({ page }) => {
+test('tool explorer lists tools, builds args from the schema and shows the raw exchange', async ({
+  page,
+}) => {
   let body: unknown = null;
   await mockApi(page);
   await page.route('**/__mockapi/api/explorer/call', async (route) => {
@@ -39,7 +43,11 @@ test('tool explorer lists tools, builds args from the schema and shows the raw e
   await expect(page.getByTestId('rpc-result')).toContainText('"amount_minor": 18000');
   await expect(page.getByTestId('rpc-result')).not.toContainText('jsonrpc');
   await expect(page.getByTestId('explorer-summary')).toContainText('37 ms');
-  expect(body).toMatchObject({ tool: 'zoho_get_item', args: { sku: 'CHAI-250', include_locations: true }, faults: ['expired_token'] });
+  expect(body).toMatchObject({
+    tool: 'zoho_get_item',
+    args: { sku: 'CHAI-250', include_locations: true },
+    faults: ['expired_token'],
+  });
 });
 
 test('tool explorer shows an error state with retry when the API is down', async ({ page }) => {

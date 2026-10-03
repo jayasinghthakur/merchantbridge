@@ -24,7 +24,14 @@ const events: TraceEvent[] = [
     result: { data: {} },
   },
   { type: 'assistant_text', text: 'In stock.' },
-  { type: 'done', stop_reason: 'end_turn', tool_calls: 1, input_tokens: 10, output_tokens: 5, duration_ms: 900 },
+  {
+    type: 'done',
+    stop_reason: 'end_turn',
+    tool_calls: 1,
+    input_tokens: 10,
+    output_tokens: 5,
+    duration_ms: 900,
+  },
 ];
 
 describe('trace reducer', () => {
@@ -58,7 +65,10 @@ describe('trace reducer', () => {
 
 describe('parseTraceEvent', () => {
   it('accepts known events and rejects junk', () => {
-    expect(parseTraceEvent('{"type":"assistant_text","text":"hi"}')).toEqual({ type: 'assistant_text', text: 'hi' });
+    expect(parseTraceEvent('{"type":"assistant_text","text":"hi"}')).toEqual({
+      type: 'assistant_text',
+      text: 'hi',
+    });
     expect(parseTraceEvent('{"type":"nope"}')).toBeNull();
     expect(parseTraceEvent('not json')).toBeNull();
   });
@@ -66,12 +76,12 @@ describe('parseTraceEvent', () => {
 
 describe('decision chips', () => {
   it('formats the governor decisions shown in the trace', () => {
-    expect(decisionChip({ type: 'retried', attempt: 1, reason: '1070', backoff_ms: 480 }, 0).label).toBe(
-      'retried 1070 · 480ms',
-    );
-    expect(decisionChip({ type: 'circuit_open', until_ms: 60_000, reason: 'code 44' }, 0).label).toBe(
-      'circuit open 60s',
-    );
+    expect(
+      decisionChip({ type: 'retried', attempt: 1, reason: '1070', backoff_ms: 480 }, 0).label,
+    ).toBe('retried 1070 · 480ms');
+    expect(
+      decisionChip({ type: 'circuit_open', until_ms: 60_000, reason: 'code 44' }, 0).label,
+    ).toBe('circuit open 60s');
     expect(decisionChip({ type: 'cache_hit' }, 0).tone).toBe('brand');
   });
 
@@ -79,7 +89,8 @@ describe('decision chips', () => {
     expect(decisionChip({ type: 'token_refreshed' }, 0).label).toBe('token refreshed');
     expect(decisionChip({ type: 'token_refreshed' }, 0).detail).toMatch(/401/);
     expect(
-      decisionChip({ type: 'retried', attempt: 2, reason: 'token_refreshed', backoff_ms: 0 }, 0).label,
+      decisionChip({ type: 'retried', attempt: 2, reason: 'token_refreshed', backoff_ms: 0 }, 0)
+        .label,
     ).toBe('retried after token refresh');
   });
 

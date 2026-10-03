@@ -46,7 +46,8 @@ export function buttonClass(variant: ButtonVariant = 'primary', size: 'sm' | 'md
   const sizes = size === 'sm' ? 'h-8 px-3 text-sm' : 'h-10 px-4 text-[0.9375rem]';
   const variants: Record<ButtonVariant, string> = {
     primary: 'bg-brand text-on-brand hover:bg-brand-hover',
-    secondary: 'border border-line-strong bg-raised text-ink hover:border-brand hover:text-brand-ink',
+    secondary:
+      'border border-line-strong bg-raised text-ink hover:border-brand hover:text-brand-ink',
     ghost: 'text-ink-muted hover:bg-sunken hover:text-ink',
   };
   return `${base} ${sizes} ${variants[variant]}`;
@@ -72,7 +73,8 @@ export function Notice({
   testId?: string;
 }) {
   const Icon = tone === 'info' ? InfoIcon : AlertIcon;
-  const iconColor = tone === 'error' ? 'text-danger' : tone === 'warn' ? 'text-accent-ink' : 'text-brand-ink';
+  const iconColor =
+    tone === 'error' ? 'text-danger' : tone === 'warn' ? 'text-accent-ink' : 'text-brand-ink';
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}
@@ -125,12 +127,16 @@ export function SectionHeading({
   return (
     <div className="max-w-2xl">
       {eyebrow ? (
-        <p className="text-xs font-semibold tracking-[0.12em] text-brand-ink uppercase">{eyebrow}</p>
+        <p className="text-xs font-semibold tracking-[0.12em] text-brand-ink uppercase">
+          {eyebrow}
+        </p>
       ) : null}
       <h2 id={id} className="mt-1 text-xl font-bold tracking-tight text-ink sm:text-2xl">
         {title}
       </h2>
-      {children ? <p className="mt-2 text-[0.9375rem] leading-relaxed text-ink-muted">{children}</p> : null}
+      {children ? (
+        <p className="mt-2 text-[0.9375rem] leading-relaxed text-ink-muted">{children}</p>
+      ) : null}
     </div>
   );
 }

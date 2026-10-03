@@ -26,7 +26,9 @@ describe('parseInline', () => {
 
 describe('parseMarkdown', () => {
   it('builds paragraphs, lists, headings and code', () => {
-    const blocks = parseMarkdown('## Evidence\nLine one\nline two\n\n- a\n- b\n\n1. x\n2. y\n\n```\ncode\n```');
+    const blocks = parseMarkdown(
+      '## Evidence\nLine one\nline two\n\n- a\n- b\n\n1. x\n2. y\n\n```\ncode\n```',
+    );
     expect(blocks.map((b) => b.kind)).toEqual(['heading', 'p', 'ul', 'ol', 'code']);
     const p = blocks[1];
     expect(p?.kind === 'p' ? p.lines.length : 0).toBe(2);

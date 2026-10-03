@@ -6,7 +6,8 @@ import { describeApiError, getTools } from '../lib/api';
 import { STATIC_TOOLS } from '../lib/tools-fallback';
 import { Badge, Skeleton } from './ui';
 
-type State = { kind: 'loading' } | { kind: 'live'; data: ToolsResponse } | { kind: 'static'; reason: string };
+type State =
+  { kind: 'loading' } | { kind: 'live'; data: ToolsResponse } | { kind: 'static'; reason: string };
 
 function firstSentence(text: string): string {
   const m = /^(.+?[.!?])(\s|$)/s.exec(text.trim());
@@ -45,7 +46,10 @@ export function LiveToolTable() {
 
   return (
     <div className="space-y-2">
-      <p className="flex flex-wrap items-center gap-2 text-xs text-ink-subtle" data-testid="docs-tool-source">
+      <p
+        className="flex flex-wrap items-center gap-2 text-xs text-ink-subtle"
+        data-testid="docs-tool-source"
+      >
         {state.kind === 'live' ? (
           <>
             <Badge tone="brand">live</Badge> from /api/tools · {rows.length} tools
@@ -57,7 +61,10 @@ export function LiveToolTable() {
         )}
       </p>
       <div className="mb-card overflow-hidden">
-        <table className="block w-full border-collapse text-left text-sm sm:table" data-testid="docs-tool-table">
+        <table
+          className="block w-full border-collapse text-left text-sm sm:table"
+          data-testid="docs-tool-table"
+        >
           <thead className="hidden bg-sunken text-xs tracking-wide text-ink-subtle uppercase sm:table-header-group">
             <tr>
               <th scope="col" className="px-4 py-2.5 font-semibold">
@@ -70,11 +77,16 @@ export function LiveToolTable() {
           </thead>
           <tbody className="block sm:table-row-group">
             {rows.map((r) => (
-              <tr key={r.name} className="block border-t border-line align-top first:border-t-0 sm:table-row sm:first:border-t">
+              <tr
+                key={r.name}
+                className="block border-t border-line align-top first:border-t-0 sm:table-row sm:first:border-t"
+              >
                 <td className="block px-4 pt-3 font-mono text-[13px] break-all text-brand-ink sm:table-cell sm:py-2.5 sm:break-normal sm:whitespace-nowrap">
                   {r.name}
                 </td>
-                <td className="block px-4 pt-1 pb-3 leading-relaxed text-ink-muted sm:table-cell sm:py-2.5">{r.summary}</td>
+                <td className="block px-4 pt-1 pb-3 leading-relaxed text-ink-muted sm:table-cell sm:py-2.5">
+                  {r.summary}
+                </td>
               </tr>
             ))}
           </tbody>

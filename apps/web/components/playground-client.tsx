@@ -108,7 +108,9 @@ export function PlaygroundClient() {
         updateRun(id, finishRun);
       } catch (e) {
         const message =
-          isApiError(e) && e.kind === 'aborted' ? 'Stopped before the agent finished.' : describeApiError(e);
+          isApiError(e) && e.kind === 'aborted'
+            ? 'Stopped before the agent finished.'
+            : describeApiError(e);
         updateRun(id, (r) => failRun(r, message));
       } finally {
         if (controller.current === ac) controller.current = null;
@@ -140,9 +142,9 @@ export function PlaygroundClient() {
               </Link>
             }
           >
-            This deployment is not running the model right now (no API key, the spend cap or the kill switch), so the
-            scenarios are off. The Tools explorer calls the same MCP tools on the same demo data without a model, fault
-            toggles included.
+            This deployment is not running the model right now (no API key, the spend cap or the
+            kill switch), so the scenarios are off. The Tools explorer calls the same MCP tools on
+            the same demo data without a model, fault toggles included.
           </Notice>
         ) : null}
         {status.kind === 'error' ? (
@@ -215,14 +217,20 @@ export function PlaygroundClient() {
                 Stop
               </button>
             ) : (
-              <button type="submit" className={buttonClass('primary')} disabled={disabled || input.trim() === ''}>
+              <button
+                type="submit"
+                className={buttonClass('primary')}
+                disabled={disabled || input.trim() === ''}
+              >
                 <SendIcon size={15} />
                 Ask
               </button>
             )}
             {blockedUntil !== null ? (
               <span className="text-xs text-ink-muted">
-                <Countdown untilMs={blockedUntil}>{(s) => (s > 0 ? `Rate limited: ${s}s` : '')}</Countdown>
+                <Countdown untilMs={blockedUntil}>
+                  {(s) => (s > 0 ? `Rate limited: ${s}s` : '')}
+                </Countdown>
               </span>
             ) : null}
           </div>

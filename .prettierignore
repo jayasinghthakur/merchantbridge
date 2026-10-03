@@ -4,3 +4,4 @@ docs/mcp-tools.json
 **/.next/
 **/dist/
 packages/db/drizzle/
+apps/web/next-env.d.ts

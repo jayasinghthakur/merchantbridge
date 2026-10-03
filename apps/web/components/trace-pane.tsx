@@ -30,11 +30,16 @@ function RunError({ run }: { run: RunState }) {
   switch (err.code) {
     case 'PLAYGROUND_DISABLED':
       return (
-        <Notice tone="warn" title="The live agent is paused" testId="playground-error" action={<ToolsExplorerLink />}>
+        <Notice
+          tone="warn"
+          title="The live agent is paused"
+          testId="playground-error"
+          action={<ToolsExplorerLink />}
+        >
           <p>{err.message}</p>
           <p className="mt-1">
-            The MCP server itself is unaffected: the Tools explorer runs the same tools without a model, and you can add
-            the demo server to your own Claude from the home page.
+            The MCP server itself is unaffected: the Tools explorer runs the same tools without a
+            model, and you can add the demo server to your own Claude from the home page.
           </p>
         </Notice>
       );
@@ -54,7 +59,8 @@ function RunError({ run }: { run: RunState }) {
     case 'BUDGET_EXHAUSTED':
       return (
         <Notice tone="warn" title="Today’s demo budget is used up" testId="playground-error">
-          The playground has a fixed daily model budget and it has run out. It resets tomorrow; meanwhile the{' '}
+          The playground has a fixed daily model budget and it has run out. It resets tomorrow;
+          meanwhile the{' '}
           <Link className="font-semibold text-brand-ink underline" href="/tools">
             tool explorer
           </Link>{' '}
@@ -89,7 +95,11 @@ function RunView({ run }: { run: RunState }) {
         <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-ink-subtle">
           <span>{scenario ? scenario.agent : 'Your question'}</span>
           {run.session?.replay ? (
-            <Badge tone="warn" testId="replay-badge" title="Recorded transcript, not a live model call">
+            <Badge
+              tone="warn"
+              testId="replay-badge"
+              title="Recorded transcript, not a live model call"
+            >
               replay
             </Badge>
           ) : null}
@@ -118,7 +128,10 @@ function RunView({ run }: { run: RunState }) {
             <li key={`text-${i}`} data-testid="assistant-text" className="px-1">
               <MarkdownText text={item.text} />
               {streaming && i === run.items.length - 1 ? (
-                <span aria-hidden="true" className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-brand align-middle" />
+                <span
+                  aria-hidden="true"
+                  className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-brand align-middle"
+                />
               ) : null}
             </li>
           ),
@@ -135,7 +148,11 @@ function RunView({ run }: { run: RunState }) {
       <RunError run={run} />
 
       {run.status === 'interrupted' ? (
-        <Notice tone="error" title="The stream ended before the agent finished" testId="playground-interrupted">
+        <Notice
+          tone="error"
+          title="The stream ended before the agent finished"
+          testId="playground-interrupted"
+        >
           {run.clientError ?? 'The connection closed early.'} Try the question again.
         </Notice>
       ) : null}
@@ -150,8 +167,8 @@ function RunView({ run }: { run: RunState }) {
             {run.done.tool_calls} tool call{run.done.tool_calls === 1 ? '' : 's'}
           </span>
           <span>
-            {run.done.input_tokens.toLocaleString('en-US')} in / {run.done.output_tokens.toLocaleString('en-US')}{' '}
-            out tokens
+            {run.done.input_tokens.toLocaleString('en-US')} in /{' '}
+            {run.done.output_tokens.toLocaleString('en-US')} out tokens
           </span>
           <span>{formatDuration(run.done.duration_ms)}</span>
           {steps.length === 0 && run.done.tool_calls === 0 ? <span>no tools used</span> : null}
@@ -217,8 +234,8 @@ export function TracePane({
           <div data-testid="trace-paused">
             <EmptyState title="Nothing will run here while the agent is paused">
               <p>
-                Every tool the agent would call can be run by hand in the Tools explorer, with the raw JSON-RPC exchange
-                and the governor decisions for each call.
+                Every tool the agent would call can be run by hand in the Tools explorer, with the
+                raw JSON-RPC exchange and the governor decisions for each call.
               </p>
               <div className="mt-4">
                 <ToolsExplorerLink />
@@ -227,8 +244,8 @@ export function TracePane({
           </div>
         ) : runs.length === 0 ? (
           <EmptyState title="No runs yet">
-            Pick a scenario card or ask your own question. Each tool call, its arguments, latency, cache and governor
-            decisions appear here as the agent works.
+            Pick a scenario card or ask your own question. Each tool call, its arguments, latency,
+            cache and governor decisions appear here as the agent works.
           </EmptyState>
         ) : (
           runs.map((run) => <RunView key={run.id} run={run} />)

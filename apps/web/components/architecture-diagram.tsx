@@ -19,7 +19,9 @@ function Box({
   return (
     <div className={`min-w-0 rounded-md border px-3 py-2.5 ${tones[tone]}`}>
       <p className="text-sm font-bold text-ink">{title}</p>
-      {children ? <div className="mt-0.5 text-xs leading-relaxed text-ink-muted">{children}</div> : null}
+      {children ? (
+        <div className="mt-0.5 text-xs leading-relaxed text-ink-muted">{children}</div>
+      ) : null}
     </div>
   );
 }
@@ -43,7 +45,8 @@ export function ArchitectureDiagram() {
       <div className="grid gap-2 sm:grid-cols-2">
         <Box title="Merchant agents">Claude Code, Agent SDK, Messages API, Claude.ai</Box>
         <Box title="This site" tone="muted">
-          The playground runs a real agent and the explorer calls tools directly, both on the demo tenant
+          The playground runs a real agent and the explorer calls tools directly, both on the demo
+          tenant
         </Box>
       </div>
       <Down label="POST /mcp (Bearer mb_live_) · /mcp/demo" />

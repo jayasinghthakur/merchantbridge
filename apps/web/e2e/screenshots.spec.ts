@@ -31,7 +31,9 @@ async function holdPlaygroundStreamOpen(page: Page) {
           for (const c of chunks) controller.enqueue(enc.encode(c));
         },
       });
-      return Promise.resolve(new Response(body, { headers: { 'content-type': 'text/event-stream' } }));
+      return Promise.resolve(
+        new Response(body, { headers: { 'content-type': 'text/event-stream' } }),
+      );
     };
   }, frames);
 }
@@ -45,7 +47,10 @@ for (const vp of VIEWPORTS) {
         // The Next dev indicator is dev-only chrome; keep it out of review screenshots.
         await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
         await page.evaluate(() => window.scrollTo(0, 0));
-        await page.screenshot({ path: path.join(OUT, `${name}-${vp.name}-${scheme}.png`), fullPage: true });
+        await page.screenshot({
+          path: path.join(OUT, `${name}-${vp.name}-${scheme}.png`),
+          fullPage: true,
+        });
       }
 
       async function noHorizontalOverflow(page: Page) {

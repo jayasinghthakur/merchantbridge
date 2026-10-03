@@ -56,8 +56,8 @@ export function ConnectSuccess() {
       <>
         <Header connected={false} />
         <EmptyState title="There is no key to show">
-          Keys are displayed once, right after connecting, and this page has already been used or opened without
-          one. Connect again to mint a new key.
+          Keys are displayed once, right after connecting, and this page has already been used or
+          opened without one. Connect again to mint a new key.
           <div className="mt-4">
             <Link href="/connect" className={buttonClass('secondary', 'sm')}>
               Back to connect
@@ -72,8 +72,13 @@ export function ConnectSuccess() {
   return (
     <div className="space-y-6">
       <Header connected />
-      <Notice tone="warn" title="Copy your key now: it will not be shown again" testId="key-once-warning">
-        MerchantBridge stores only a hash of this key. If you lose it, connect again to mint a new one.
+      <Notice
+        tone="warn"
+        title="Copy your key now: it will not be shown again"
+        testId="key-once-warning"
+      >
+        MerchantBridge stores only a hash of this key. If you lose it, connect again to mint a new
+        one.
       </Notice>
       <dl className="mb-card grid gap-3 p-4 text-sm sm:grid-cols-2">
         <div>

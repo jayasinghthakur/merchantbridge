@@ -40,7 +40,8 @@ const PRINCIPLES: { principle: string; feature: string }[] = [
   },
   {
     principle: 'Validation layer',
-    feature: 'Zod schemas on input and output, scope checks, email and phone masking, free text fenced as untrusted.',
+    feature:
+      'Zod schemas on input and output, scope checks, email and phone masking, free text fenced as untrusted.',
   },
   {
     principle: 'Audit trail',
@@ -65,8 +66,8 @@ export default function HomePage() {
             A private Agent Studio-style connector for Zoho Inventory
           </h1>
           <p className="mt-4 max-w-xl text-lg leading-relaxed text-ink-muted">
-            One-time OAuth, available to every agent the merchant runs, scoped to their organization, read-only by
-            construction, and audited call by call.
+            One-time OAuth, available to every agent the merchant runs, scoped to their
+            organization, read-only by construction, and audited call by call.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link href="/playground" className={buttonClass('primary')}>
@@ -81,7 +82,8 @@ export default function HomePage() {
         <div className="mb-card min-w-0 p-4 sm:p-5">
           <p className="text-sm font-semibold text-ink">Use it from your agent</p>
           <p className="mt-1 mb-3 text-sm text-ink-muted">
-            The public demo server runs against synthetic data for <InlineCode>Chai &amp; Co (DEMO)</InlineCode>.
+            The public demo server runs against synthetic data for{' '}
+            <InlineCode>Chai &amp; Co (DEMO)</InlineCode>.
           </p>
           <McpDemoCommand />
           <p className="mt-3 text-xs text-ink-subtle">
@@ -113,9 +115,13 @@ export default function HomePage() {
       </section>
 
       <section aria-labelledby="principles" className="border-t border-line py-14">
-        <SectionHeading id="principles" eyebrow="Agent Studio principles" title="Principle, then the feature that enforces it">
-          Agent Studio publishes its guardrails; this connector maps each one to something the server does, not something
-          the prompt asks for.
+        <SectionHeading
+          id="principles"
+          eyebrow="Agent Studio principles"
+          title="Principle, then the feature that enforces it"
+        >
+          Agent Studio publishes its guardrails; this connector maps each one to something the
+          server does, not something the prompt asks for.
         </SectionHeading>
         <div className="mb-card mt-8 overflow-hidden">
           <table className="w-full border-collapse text-left text-sm">
@@ -143,10 +149,18 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section aria-labelledby="architecture" className="grid gap-8 border-t border-line py-14 lg:grid-cols-[1fr_1.4fr]">
-        <SectionHeading id="architecture" eyebrow="Architecture" title="One thin door, one governed path to Zoho">
-          MCP is only the door. Every tool runs through the same runtime and every Zoho request goes through the rate
-          governor, so the public demo exercises exactly what a merchant’s agents would.
+      <section
+        aria-labelledby="architecture"
+        className="grid gap-8 border-t border-line py-14 lg:grid-cols-[1fr_1.4fr]"
+      >
+        <SectionHeading
+          id="architecture"
+          eyebrow="Architecture"
+          title="One thin door, one governed path to Zoho"
+        >
+          MCP is only the door. Every tool runs through the same runtime and every Zoho request goes
+          through the rate governor, so the public demo exercises exactly what a merchant’s agents
+          would.
         </SectionHeading>
         <ArchitectureDiagram />
       </section>
@@ -161,13 +175,16 @@ export default function HomePage() {
             </>
           }
         >
-          Lists return at most 100 rows with an opaque cursor; every result stays under 10K tokens. Money comes back in
-          minor units so it compares directly with Razorpay amounts.
+          Lists return at most 100 rows with an opaque cursor; every result stays under 10K tokens.
+          Money comes back in minor units so it compares directly with Razorpay amounts.
         </SectionHeading>
         <ul className="mt-8 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {STATIC_TOOLS.map((t) => (
             <li key={t.name} className="mb-card min-w-0 p-3.5">
-              <p className="truncate font-mono text-[13px] font-medium text-brand-ink" title={t.name}>
+              <p
+                className="truncate font-mono text-[13px] font-medium text-brand-ink"
+                title={t.name}
+              >
                 {t.name}
               </p>
               <p className="mt-1 text-sm leading-relaxed text-ink-muted">{t.summary}</p>

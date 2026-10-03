@@ -58,7 +58,8 @@ export const TOOLS: ToolsResponse = {
     {
       name: 'zoho_list_invoices',
       title: 'List invoices',
-      description: 'Returns invoices filtered by status, customer or due date. Lists return at most 100 rows.',
+      description:
+        'Returns invoices filtered by status, customer or due date. Lists return at most 100 rows.',
       inputJsonSchema: {
         type: 'object',
         properties: {
@@ -111,11 +112,19 @@ export function disputeEvents(faults: DemoFault[] = []): TraceEvent[] {
       ],
       budget_remaining_today: 498,
       result: {
-        data: { payment: { reference: 'pay_DEMO8xK2' }, invoices: [{ invoice_number: 'INV-00031' }] },
+        data: {
+          payment: { reference: 'pay_DEMO8xK2' },
+          invoices: [{ invoice_number: 'INV-00031' }],
+        },
         meta: { as_of: '2026-10-03T09:00:00Z', cached: false, demo: true },
       },
     },
-    { type: 'tool_call', call_id: 'c2', tool: 'zoho_get_sales_order', args: { salesorder_id: 'so_31' } },
+    {
+      type: 'tool_call',
+      call_id: 'c2',
+      tool: 'zoho_get_sales_order',
+      args: { salesorder_id: 'so_31' },
+    },
     {
       type: 'tool_result',
       call_id: 'c2',
@@ -177,7 +186,14 @@ export function rateLimitedEvents(faults: DemoFault[]): TraceEvent[] {
       type: 'assistant_text',
       text: 'Zoho is temporarily rate limiting this organization, so I could not check stock. Please retry in about a minute.',
     },
-    { type: 'done', stop_reason: 'end_turn', tool_calls: 1, input_tokens: 2100, output_tokens: 60, duration_ms: 2100 },
+    {
+      type: 'done',
+      stop_reason: 'end_turn',
+      tool_calls: 1,
+      input_tokens: 2100,
+      output_tokens: 60,
+      duration_ms: 2100,
+    },
   ];
 }
 
@@ -188,7 +204,14 @@ export function refusalEvents(): TraceEvent[] {
       type: 'assistant_text',
       text: 'I can’t do that. This connector is **read-only**: it can look up SO-00012 and its invoice, but it cannot cancel orders or record payments.',
     },
-    { type: 'done', stop_reason: 'end_turn', tool_calls: 0, input_tokens: 1500, output_tokens: 48, duration_ms: 1200 },
+    {
+      type: 'done',
+      stop_reason: 'end_turn',
+      tool_calls: 0,
+      input_tokens: 1500,
+      output_tokens: 48,
+      duration_ms: 1200,
+    },
   ];
 }
 
@@ -229,11 +252,18 @@ export const EXPLORER_RESPONSE: ExplorerCallResponse = {
         },
       },
       content: [
-        { type: 'text', text: '{"data":{"sku":"CHAI-250","name":"Masala Chai 250g"},"meta":{"demo":true}}' },
+        {
+          type: 'text',
+          text: '{"data":{"sku":"CHAI-250","name":"Masala Chai 250g"},"meta":{"demo":true}}',
+        },
       ],
       isError: false,
       structuredContent: {
-        data: { sku: 'CHAI-250', name: 'Masala Chai 250g', rate: { amount_minor: 18000, currency: 'INR' } },
+        data: {
+          sku: 'CHAI-250',
+          name: 'Masala Chai 250g',
+          rate: { amount_minor: 18000, currency: 'INR' },
+        },
         meta: { organization_id: 'demo', as_of: '2026-10-03T09:00:00Z', cached: false, demo: true },
       },
     },
@@ -256,10 +286,15 @@ export async function mockApi(page: Page, opts: MockOptions = {}): Promise<void>
   );
   await page.route('**/__mockapi/api/tools', (route) =>
     opts.tools === 'error'
-      ? route.fulfill({ status: 503, json: { error: { code: 'UNAVAILABLE', message: 'API is restarting' } } })
+      ? route.fulfill({
+          status: 503,
+          json: { error: { code: 'UNAVAILABLE', message: 'API is restarting' } },
+        })
       : route.fulfill({ json: opts.tools ?? TOOLS }),
   );
-  await page.route('**/__mockapi/api/explorer/call', (route) => route.fulfill({ json: EXPLORER_RESPONSE }));
+  await page.route('**/__mockapi/api/explorer/call', (route) =>
+    route.fulfill({ json: EXPLORER_RESPONSE }),
+  );
   await page.route('**/__mockapi/api/playground', async (route) => {
     const req = route.request().postDataJSON() as PlaygroundRequest;
     opts.onPlaygroundRequest?.(req);

@@ -32,7 +32,8 @@ function loadTurnstile(): Promise<TurnstileApi> {
     const s = document.createElement('script');
     s.src = SCRIPT_SRC;
     s.async = true;
-    s.onload = () => (window.turnstile ? resolve(window.turnstile) : reject(new Error('turnstile missing')));
+    s.onload = () =>
+      window.turnstile ? resolve(window.turnstile) : reject(new Error('turnstile missing'));
     s.onerror = () => {
       scriptPromise = null;
       reject(new Error('turnstile failed to load'));
@@ -43,7 +44,13 @@ function loadTurnstile(): Promise<TurnstileApi> {
 }
 
 /** Cloudflare Turnstile widget; reports a fresh token (or null when it expires or fails). */
-export function Turnstile({ siteKey, onToken }: { siteKey: string; onToken: (token: string | null) => void }) {
+export function Turnstile({
+  siteKey,
+  onToken,
+}: {
+  siteKey: string;
+  onToken: (token: string | null) => void;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const cb = useRef(onToken);
   cb.current = onToken;
@@ -79,7 +86,8 @@ export function Turnstile({ siteKey, onToken }: { siteKey: string; onToken: (tok
       <div ref={box} className="min-h-[65px]" />
       {failed ? (
         <p className="text-xs text-danger">
-          The human check could not load. Disable content blockers for challenges.cloudflare.com and reload.
+          The human check could not load. Disable content blockers for challenges.cloudflare.com and
+          reload.
         </p>
       ) : null}
     </div>

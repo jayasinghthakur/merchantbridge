@@ -4,7 +4,8 @@ import { PlaygroundClient } from '../../components/playground-client';
 
 export const metadata: Metadata = {
   title: 'Playground',
-  description: 'Watch a real Claude agent call the MerchantBridge MCP server against demo Zoho Inventory data.',
+  description:
+    'Watch a real Claude agent call the MerchantBridge MCP server against demo Zoho Inventory data.',
 };
 
 export default function PlaygroundPage() {
@@ -14,8 +15,8 @@ export default function PlaygroundPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">Playground</h1>
           <p className="mt-1 max-w-2xl text-[0.9375rem] text-ink-muted">
-            A real Claude agent with this connector as its only tools. Pick a scenario, then flip a fault to see how the
-            governor and errors behave.
+            A real Claude agent with this connector as its only tools. Pick a scenario, then flip a
+            fault to see how the governor and errors behave.
           </p>
         </div>
         <DemoBadge className="self-start sm:self-auto lg:hidden" />

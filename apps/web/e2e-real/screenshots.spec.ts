@@ -39,10 +39,16 @@ const PAGES: PageCase[] = [
     name: 'tools',
     async open(page, wide) {
       await gotoObservingTools(page, '/tools');
-      if (wide) await page.getByTestId('tool-list').getByRole('button', { name: /zoho_get_item/ }).click();
+      if (wide)
+        await page
+          .getByTestId('tool-list')
+          .getByRole('button', { name: /zoho_get_item/ })
+          .click();
       else await page.getByLabel('Tool', { exact: true }).selectOption('zoho_get_item');
       await page.getByLabel(/^sku/).fill('CHAI-250');
-      const done = page.waitForResponse((r) => new URL(r.url()).pathname.endsWith(API_ROUTES.explorerCall));
+      const done = page.waitForResponse((r) =>
+        new URL(r.url()).pathname.endsWith(API_ROUTES.explorerCall),
+      );
       await page.getByRole('button', { name: 'Run zoho_get_item' }).click();
       expect((await done).status()).toBe(200);
       await expect(page.getByTestId('rpc-response')).toContainText('CHAI-250');
@@ -51,7 +57,9 @@ const PAGES: PageCase[] = [
   {
     name: 'docs',
     async open(page) {
-      const tools = page.waitForResponse((r) => new URL(r.url()).pathname.endsWith(API_ROUTES.tools));
+      const tools = page.waitForResponse((r) =>
+        new URL(r.url()).pathname.endsWith(API_ROUTES.tools),
+      );
       await gotoObservingStatus(page, '/docs');
       expect((await tools).status()).toBe(200);
       await expect(page.getByTestId('docs-tool-table')).toBeVisible();

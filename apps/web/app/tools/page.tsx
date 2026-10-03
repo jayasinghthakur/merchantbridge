@@ -4,7 +4,8 @@ import { ToolsExplorer } from '../../components/tools-explorer';
 
 export const metadata: Metadata = {
   title: 'Tool explorer',
-  description: 'Every MerchantBridge MCP tool with its schema, and the raw JSON-RPC exchange against the demo server.',
+  description:
+    'Every MerchantBridge MCP tool with its schema, and the raw JSON-RPC exchange against the demo server.',
 };
 
 export default function ToolsPage() {

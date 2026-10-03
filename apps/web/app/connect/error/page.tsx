@@ -33,7 +33,9 @@ export default async function ConnectErrorPage({
           Use the demo instead
         </Link>
       </div>
-      {reason ? <p className="mt-6 font-mono text-xs text-ink-subtle">reason: {reason.slice(0, 40)}</p> : null}
+      {reason ? (
+        <p className="mt-6 font-mono text-xs text-ink-subtle">reason: {reason.slice(0, 40)}</p>
+      ) : null}
     </div>
   );
 }

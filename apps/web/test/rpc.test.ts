@@ -5,7 +5,10 @@ import { summarizeRpc } from '../lib/rpc';
 const OK = {
   result: {
     _meta: {
-      'dev.merchantbridge/trace': { decisions: [{ type: 'admitted', waited_ms: 0 }], upstream_calls: 1 },
+      'dev.merchantbridge/trace': {
+        decisions: [{ type: 'admitted', waited_ms: 0 }],
+        upstream_calls: 1,
+      },
       'io.modelcontextprotocol/serverInfo': { name: 'merchantbridge', version: '0.1.0' },
     },
     content: [{ type: 'text', text: '{"data":{"sku":"CHAI-250"}}' }],
@@ -47,12 +50,20 @@ describe('summarizeRpc', () => {
 
   it('reports JSON-RPC protocol errors (unknown tool) with their numeric code', () => {
     expect(
-      summarizeRpc({ jsonrpc: '2.0', id: 0, error: { code: -32602, message: 'Tool nope not found' } }),
+      summarizeRpc({
+        jsonrpc: '2.0',
+        id: 0,
+        error: { code: -32602, message: 'Tool nope not found' },
+      }),
     ).toEqual({ isError: true, code: 'JSON-RPC -32602', structured: null });
   });
 
   it('tolerates a missing or non-object response', () => {
     expect(summarizeRpc(null)).toEqual({ isError: false, code: null, structured: null });
-    expect(summarizeRpc({ result: { content: [] } })).toEqual({ isError: false, code: null, structured: null });
+    expect(summarizeRpc({ result: { content: [] } })).toEqual({
+      isError: false,
+      code: null,
+      structured: null,
+    });
   });
 });

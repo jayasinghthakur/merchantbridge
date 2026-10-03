@@ -42,7 +42,10 @@ export function ScenarioCards({
                 />
               </span>
               <span className="mt-1 block font-semibold text-ink">{s.title}</span>
-              <span id={`scenario-desc-${s.id}`} className="mt-0.5 block text-sm leading-relaxed text-ink-muted">
+              <span
+                id={`scenario-desc-${s.id}`}
+                className="mt-0.5 block text-sm leading-relaxed text-ink-muted"
+              >
                 {s.description}
               </span>
             </button>

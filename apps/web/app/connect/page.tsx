@@ -5,7 +5,8 @@ import { CONNECT_SCOPES } from '../../lib/connect';
 
 export const metadata: Metadata = {
   title: 'Connect Zoho Inventory',
-  description: 'Connect a Zoho Inventory organization to MerchantBridge with read-only OAuth scopes.',
+  description:
+    'Connect a Zoho Inventory organization to MerchantBridge with read-only OAuth scopes.',
 };
 
 const STEPS = [
@@ -19,10 +20,12 @@ export default function ConnectPage() {
   return (
     <div className="mx-auto grid max-w-5xl gap-8 px-4 pt-6 sm:px-6 sm:pt-8 md:grid-cols-[1.1fr_1fr]">
       <div className="min-w-0">
-        <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">Connect Zoho Inventory</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
+          Connect Zoho Inventory
+        </h1>
         <p className="mt-2 text-[0.9375rem] leading-relaxed text-ink-muted">
-          One-time OAuth makes your organization available to every agent you run, through a single key. Nothing can
-          be changed in Zoho through this connector.
+          One-time OAuth makes your organization available to every agent you run, through a single
+          key. Nothing can be changed in Zoho through this connector.
         </p>
         <ol className="mt-6 space-y-3">
           {STEPS.map((s, i) => (
@@ -44,14 +47,17 @@ export default function ConnectPage() {
           </h2>
           <ul className="mt-2 flex flex-wrap gap-1.5">
             {CONNECT_SCOPES.map((s) => (
-              <li key={s} className="rounded-sm border border-line bg-raised px-1.5 py-0.5 font-mono text-xs text-ink-muted">
+              <li
+                key={s}
+                className="rounded-sm border border-line bg-raised px-1.5 py-0.5 font-mono text-xs text-ink-muted"
+              >
                 {s}
               </li>
             ))}
           </ul>
           <p className="mt-2 text-xs text-ink-subtle">
-            All eight are requested on first consent, because each re-consent uses up one of the limited refresh tokens
-            Zoho allows per user.
+            All eight are requested on first consent, because each re-consent uses up one of the
+            limited refresh tokens Zoho allows per user.
           </p>
         </div>
       </div>

@@ -7,7 +7,11 @@ import { MonitorIcon, MoonIcon, SunIcon } from './icons';
 type ThemePref = 'system' | 'light' | 'dark';
 
 const ORDER: ThemePref[] = ['system', 'light', 'dark'];
-const LABEL: Record<ThemePref, string> = { system: 'System theme', light: 'Light theme', dark: 'Dark theme' };
+const LABEL: Record<ThemePref, string> = {
+  system: 'System theme',
+  light: 'Light theme',
+  dark: 'Dark theme',
+};
 
 function apply(pref: ThemePref) {
   const root = document.documentElement;

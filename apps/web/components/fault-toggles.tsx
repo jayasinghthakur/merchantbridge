@@ -66,9 +66,13 @@ export function FaultToggles({
     <div className="mb-card p-4">
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="text-sm font-bold text-ink">Fault injection</h2>
-        <span className="text-xs text-ink-subtle">{value.length === 0 ? 'none active' : `${value.length} active`}</span>
+        <span className="text-xs text-ink-subtle">
+          {value.length === 0 ? 'none active' : `${value.length} active`}
+        </span>
       </div>
-      <p className="mt-1 text-xs text-ink-muted">Sent with every request from this tab while on; other visitors are unaffected.</p>
+      <p className="mt-1 text-xs text-ink-muted">
+        Sent with every request from this tab while on; other visitors are unaffected.
+      </p>
       <ul className="mt-2 divide-y divide-line">
         {primary.map((f) => (
           <FaultSwitch
@@ -84,7 +88,9 @@ export function FaultToggles({
         <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-sm py-1 text-sm font-semibold text-ink-muted hover:text-ink [&::-webkit-details-marker]:hidden">
           <ChevronDownIcon size={15} className="transition-transform group-open:rotate-180" />
           More faults
-          {moreActive > 0 ? <span className="text-xs font-normal text-accent-ink">({moreActive} on)</span> : null}
+          {moreActive > 0 ? (
+            <span className="text-xs font-normal text-accent-ink">({moreActive} on)</span>
+          ) : null}
         </summary>
         <ul className="divide-y divide-line">
           {more.map((f) => (

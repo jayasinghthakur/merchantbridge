@@ -16,7 +16,11 @@ export function ConnectForm() {
 
   if (status.kind === 'loading') {
     return (
-      <div className="mb-card space-y-3 p-5" aria-busy="true" aria-label="Checking whether connecting is enabled">
+      <div
+        className="mb-card space-y-3 p-5"
+        aria-busy="true"
+        aria-label="Checking whether connecting is enabled"
+      >
         <Skeleton className="h-5 w-40" />
         <Skeleton className="h-10" />
         <Skeleton className="h-10" />
@@ -49,7 +53,8 @@ export function ConnectForm() {
       ) : null}
       {status.kind === 'error' ? (
         <Notice tone="warn" title="Could not check the API">
-          {status.message} You can still try; the API will reject the request if connecting is unavailable.
+          {status.message} You can still try; the API will reject the request if connecting is
+          unavailable.
         </Notice>
       ) : null}
       <div>
@@ -91,7 +96,9 @@ export function ConnectForm() {
             </option>
           ))}
         </select>
-        <p className="mt-1 text-xs text-ink-muted">The region of the domain you sign in to Zoho on.</p>
+        <p className="mt-1 text-xs text-ink-muted">
+          The region of the domain you sign in to Zoho on.
+        </p>
       </div>
       <button type="submit" className={buttonClass('primary')} disabled={disabled}>
         Continue to Zoho

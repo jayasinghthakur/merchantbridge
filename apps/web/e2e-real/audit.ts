@@ -104,7 +104,11 @@ export function auditLayout(page: Page): Promise<LayoutAudit> {
       return acc;
     }
     function inactive(el: Element): boolean {
-      if (el.closest('button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disabled="true"]')) {
+      if (
+        el.closest(
+          'button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disabled="true"]',
+        )
+      ) {
         return true;
       }
       for (let a: Element | null = el; a; a = a.parentElement) {

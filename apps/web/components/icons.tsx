@@ -25,7 +25,14 @@ function Svg({ size = 16, children, ...rest }: IconProps & { children: ReactNode
 /** Bridge mark: two piers and a deck arc. */
 export function LogoMark({ size = 22, ...rest }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false" {...rest}>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      aria-hidden="true"
+      focusable="false"
+      {...rest}
+    >
       <rect x="1" y="1" width="30" height="30" rx="8" fill="var(--mb-brand)" />
       <path
         d="M6 21h20M9 21v-5M23 21v-5M6 16c4-6 16-6 20 0"
@@ -130,8 +137,22 @@ export function Spinner({ size = 16, className = '' }: { size?: number; classNam
       aria-hidden="true"
       focusable="false"
     >
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" fill="none" />
-      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeOpacity="0.25"
+        strokeWidth="2.5"
+        fill="none"
+      />
+      <path
+        d="M21 12a9 9 0 0 0-9-9"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        fill="none"
+      />
     </svg>
   );
 }

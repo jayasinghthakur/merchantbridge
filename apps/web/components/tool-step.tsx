@@ -31,7 +31,9 @@ export function ToolStepView({ step, index }: { step: ToolStep; index: number })
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-3 py-2">
         <span className="font-mono text-xs text-ink-subtle">#{index}</span>
         <WrenchIcon size={14} className="text-brand-ink" />
-        <span className="min-w-0 font-mono text-[13px] font-semibold break-all text-ink">{step.tool}</span>
+        <span className="min-w-0 font-mono text-[13px] font-semibold break-all text-ink">
+          {step.tool}
+        </span>
         <span className="ml-auto flex items-center gap-1.5">
           {pending ? (
             <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted" role="status">
@@ -80,7 +82,12 @@ export function ToolStepView({ step, index }: { step: ToolStep; index: number })
                   const chip = decisionChip(d, step.resultAt ?? Date.now());
                   return (
                     <li key={i}>
-                      <Badge mono tone={chip.tone} title={chip.detail} testId={`decision-${d.type}`}>
+                      <Badge
+                        mono
+                        tone={chip.tone}
+                        title={chip.detail}
+                        testId={`decision-${d.type}`}
+                      >
                         {chip.label}
                       </Badge>
                     </li>

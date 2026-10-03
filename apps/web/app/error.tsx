@@ -2,7 +2,12 @@
 
 import { buttonClass, Notice } from '../components/ui';
 
-export default function RouteError({ retry }: { error: Error & { digest?: string }; retry: () => void }) {
+export default function RouteError({
+  retry,
+}: {
+  error: Error & { digest?: string };
+  retry: () => void;
+}) {
   return (
     <div className="mx-auto max-w-xl px-4 py-16 sm:px-6">
       <Notice

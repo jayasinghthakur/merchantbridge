@@ -72,12 +72,10 @@ test('connect shows the disabled-connect note when the API has no Zoho credentia
   await expect(page.getByRole('heading', { name: 'Connect Zoho Inventory' })).toBeVisible();
 
   if (status.connect_enabled) {
-    test
-      .info()
-      .annotations.push({
-        type: 'deployment',
-        description: 'connect is enabled; checked the open form',
-      });
+    test.info().annotations.push({
+      type: 'deployment',
+      description: 'connect is enabled; checked the open form',
+    });
     await expect(page.getByTestId('connect-disabled')).toHaveCount(0);
     await expect(submit).toBeEnabled();
     return;
@@ -123,12 +121,10 @@ test('playground shows the PLAYGROUND_DISABLED state and points to the Tools exp
   const card = page.locator('[data-scenario="cod-stock"]');
 
   if (status.playground_enabled) {
-    test
-      .info()
-      .annotations.push({
-        type: 'deployment',
-        description: 'playground is enabled; no model call made',
-      });
+    test.info().annotations.push({
+      type: 'deployment',
+      description: 'playground is enabled; no model call made',
+    });
     await expect(page.getByTestId('playground-off')).toHaveCount(0);
     await expect(card).toBeEnabled();
     return;

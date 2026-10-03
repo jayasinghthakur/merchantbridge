@@ -15,9 +15,7 @@ import { JsonView, prettyJson } from './json-view';
 import { Badge, buttonClass, EmptyState, Loading, Notice, Skeleton } from './ui';
 
 type ToolsState =
-  | { kind: 'loading' }
-  | { kind: 'ready'; data: ToolsResponse }
-  | { kind: 'error'; message: string };
+  { kind: 'loading' } | { kind: 'ready'; data: ToolsResponse } | { kind: 'error'; message: string };
 
 type CallState =
   | { kind: 'idle' }
@@ -29,7 +27,9 @@ function typeHint(f: FormField): string {
   if (f.kind === 'array') return `list of ${f.itemKind ?? 'string'}, comma separated`;
   if (f.kind === 'enum') return 'one of';
   const range =
-    f.minimum !== null || f.maximum !== null ? ` ${f.minimum ?? ''}–${f.maximum ?? ''}`.replace(/\s–$/, '') : '';
+    f.minimum !== null || f.maximum !== null
+      ? ` ${f.minimum ?? ''}–${f.maximum ?? ''}`.replace(/\s–$/, '')
+      : '';
   return `${f.kind}${range}`;
 }
 
@@ -50,11 +50,19 @@ function FieldInput({
     <div className="min-w-0">
       <label htmlFor={id} className="flex flex-wrap items-baseline gap-x-2 text-sm">
         <span className="font-mono font-semibold text-ink">{field.name}</span>
-        {field.required ? <span className="text-xs font-semibold text-danger">required</span> : null}
+        {field.required ? (
+          <span className="text-xs font-semibold text-danger">required</span>
+        ) : null}
         <span className="text-xs text-ink-subtle">{typeHint(field)}</span>
       </label>
       {field.kind === 'enum' ? (
-        <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className="mb-input mt-1" aria-describedby={describedBy}>
+        <select
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="mb-input mt-1"
+          aria-describedby={describedBy}
+        >
           <option value="">{field.required ? 'Choose…' : '(not set)'}</option>
           {field.enumValues.map((v) => (
             <option key={v} value={v}>
@@ -63,7 +71,13 @@ function FieldInput({
           ))}
         </select>
       ) : field.kind === 'boolean' ? (
-        <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className="mb-input mt-1" aria-describedby={describedBy}>
+        <select
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="mb-input mt-1"
+          aria-describedby={describedBy}
+        >
           <option value="">(not set)</option>
           <option value="true">true</option>
           <option value="false">false</option>
@@ -156,7 +170,10 @@ function ToolDetail({
     abort.current = ac;
     setCall({ kind: 'running' });
     try {
-      const data = await callExplorer({ tool: tool.name, args, session_id: sessionId, faults }, { signal: ac.signal });
+      const data = await callExplorer(
+        { tool: tool.name, args, session_id: sessionId, faults },
+        { signal: ac.signal },
+      );
       setCall({ kind: 'done', data, at: Date.now() });
     } catch (e) {
       if (!ac.signal.aborted) setCall({ kind: 'error', message: describeApiError(e) });
@@ -173,7 +190,9 @@ function ToolDetail({
           {tool.annotations.readOnlyHint ? <Badge tone="brand">read-only</Badge> : null}
         </div>
         <p className="mt-0.5 font-mono text-sm break-all text-brand-ink">{tool.name}</p>
-        <p className="mt-3 text-sm leading-relaxed whitespace-pre-line text-ink-muted">{tool.description}</p>
+        <p className="mt-3 text-sm leading-relaxed whitespace-pre-line text-ink-muted">
+          {tool.description}
+        </p>
         {tool.scopes.length > 0 ? (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <span className="text-xs font-semibold text-ink-subtle">Scopes</span>
@@ -195,7 +214,11 @@ function ToolDetail({
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-bold">Arguments</h3>
-          <div role="tablist" aria-label="Argument editor" className="inline-flex rounded-sm border border-line p-0.5">
+          <div
+            role="tablist"
+            aria-label="Argument editor"
+            className="inline-flex rounded-sm border border-line p-0.5"
+          >
             {(['form', 'json'] as const).map((m) => (
               <button
                 key={m}
@@ -253,12 +276,18 @@ function ToolDetail({
         )}
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          <button type="submit" className={buttonClass('primary')} disabled={call.kind === 'running' || !sessionId}>
+          <button
+            type="submit"
+            className={buttonClass('primary')}
+            disabled={call.kind === 'running' || !sessionId}
+          >
             {call.kind === 'running' ? <Spinner size={15} /> : null}
             Run {tool.name}
           </button>
           {faults.length > 0 ? (
-            <span className="text-xs text-accent-ink">with {faults.length} fault{faults.length === 1 ? '' : 's'}</span>
+            <span className="text-xs text-accent-ink">
+              with {faults.length} fault{faults.length === 1 ? '' : 's'}
+            </span>
           ) : null}
         </div>
       </form>
@@ -268,7 +297,8 @@ function ToolDetail({
       <section aria-label="Call result" aria-live="polite" className="space-y-3">
         {call.kind === 'idle' ? (
           <EmptyState title="No call yet">
-            Run the tool to see the raw JSON-RPC request sent to /mcp/demo and the response it returned.
+            Run the tool to see the raw JSON-RPC request sent to /mcp/demo and the response it
+            returned.
           </EmptyState>
         ) : null}
         {call.kind === 'running' ? <Loading label={`Calling ${tool.name}…`} /> : null}
@@ -292,12 +322,21 @@ function ToolDetail({
             {call.data.decisions.length > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-xs font-semibold text-ink-subtle">Governor decisions</span>
-                <ul className="flex flex-wrap gap-1.5" aria-label="Governor decisions" data-testid="explorer-decisions">
+                <ul
+                  className="flex flex-wrap gap-1.5"
+                  aria-label="Governor decisions"
+                  data-testid="explorer-decisions"
+                >
                   {call.data.decisions.map((d, i) => {
                     const chip = decisionChip(d, call.at);
                     return (
                       <li key={i}>
-                        <Badge mono tone={chip.tone} title={chip.detail} testId={`decision-${d.type}`}>
+                        <Badge
+                          mono
+                          tone={chip.tone}
+                          title={chip.detail}
+                          testId={`decision-${d.type}`}
+                        >
                           {chip.label}
                         </Badge>
                       </li>
@@ -309,7 +348,9 @@ function ToolDetail({
             {rpc.structured !== null ? (
               <JsonView
                 value={rpc.structured}
-                label={rpc.isError ? 'Error result (structuredContent)' : 'Result (structuredContent)'}
+                label={
+                  rpc.isError ? 'Error result (structuredContent)' : 'Result (structuredContent)'
+                }
                 testId="rpc-result"
               />
             ) : null}
@@ -382,7 +423,11 @@ export function ToolsExplorer() {
 
   const tools = state.data.tools;
   if (tools.length === 0) {
-    return <EmptyState title="The server lists no tools">The API answered, but tools/list is empty.</EmptyState>;
+    return (
+      <EmptyState title="The server lists no tools">
+        The API answered, but tools/list is empty.
+      </EmptyState>
+    );
   }
   const tool = tools.find((t) => t.name === selected) ?? tools[0];
   if (!tool) return null;
@@ -419,11 +464,15 @@ export function ToolsExplorer() {
                     onClick={() => setSelected(t.name)}
                     aria-current={active ? 'true' : undefined}
                     className={`w-full rounded-sm border px-3 py-2 text-left transition-colors ${
-                      active ? 'border-brand bg-brand-soft' : 'border-transparent hover:border-line hover:bg-raised'
+                      active
+                        ? 'border-brand bg-brand-soft'
+                        : 'border-transparent hover:border-line hover:bg-raised'
                     }`}
                   >
                     <span className="block text-sm font-semibold text-ink">{t.title}</span>
-                    <span className="block truncate font-mono text-xs text-ink-muted">{t.name}</span>
+                    <span className="block truncate font-mono text-xs text-ink-muted">
+                      {t.name}
+                    </span>
                   </button>
                 </li>
               );
@@ -431,7 +480,13 @@ export function ToolsExplorer() {
           </ul>
         </nav>
       </div>
-      <ToolDetail key={tool.name} tool={tool} sessionId={sessionId} faults={faults} onFaultsChange={setFaults} />
+      <ToolDetail
+        key={tool.name}
+        tool={tool}
+        sessionId={sessionId}
+        faults={faults}
+        onFaultsChange={setFaults}
+      />
     </div>
   );
 }

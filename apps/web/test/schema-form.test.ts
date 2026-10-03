@@ -44,7 +44,12 @@ describe('valuesToArgs', () => {
       status: '',
     });
     expect(errors).toEqual({});
-    expect(args).toEqual({ sku: 'CHAI-250', limit: 5, include_inactive: false, item_ids: ['a', 'b', 'c'] });
+    expect(args).toEqual({
+      sku: 'CHAI-250',
+      limit: 5,
+      include_inactive: false,
+      item_ids: ['a', 'b', 'c'],
+    });
   });
 
   it('reports missing required fields and bad numbers', () => {
@@ -54,7 +59,11 @@ describe('valuesToArgs', () => {
 
   it('round-trips through argsToValues and fills defaults', () => {
     const values = argsToValues(fields, { sku: 'X', item_ids: ['1', '2'], include_inactive: true });
-    expect(valuesToArgs(fields, values).args).toEqual({ sku: 'X', item_ids: ['1', '2'], include_inactive: true });
+    expect(valuesToArgs(fields, values).args).toEqual({
+      sku: 'X',
+      item_ids: ['1', '2'],
+      include_inactive: true,
+    });
     expect(defaultValues(fields).limit).toBe('20');
   });
 });

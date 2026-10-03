@@ -64,7 +64,11 @@ export function MarkdownText({ text }: { text: string }) {
             );
           case 'ol':
             return (
-              <ol key={i} start={b.start} className="list-decimal space-y-1 pl-5 marker:text-ink-subtle">
+              <ol
+                key={i}
+                start={b.start}
+                className="list-decimal space-y-1 pl-5 marker:text-ink-subtle"
+              >
                 {b.items.map((item, j) => (
                   <li key={j}>
                     <Inlines parts={item} />

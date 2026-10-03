@@ -54,20 +54,30 @@ test.describe('playground', () => {
     await expect(page.getByTestId('tool-step')).toHaveCount(0);
   });
 
-  test('a paused playground explains why, points to the Tools explorer and sends nothing', async ({ page }) => {
+  test('a paused playground explains why, points to the Tools explorer and sends nothing', async ({
+    page,
+  }) => {
     let calls = 0;
-    await mockApi(page, { status: { playground_enabled: false }, onPlaygroundRequest: () => (calls += 1) });
+    await mockApi(page, {
+      status: { playground_enabled: false },
+      onPlaygroundRequest: () => (calls += 1),
+    });
     await page.goto('/playground');
     const off = page.getByTestId('playground-off');
     await expect(off).toContainText('Live agent paused');
-    await expect(off.getByRole('link', { name: 'Open the Tools explorer' })).toHaveAttribute('href', '/tools');
+    await expect(off.getByRole('link', { name: 'Open the Tools explorer' })).toHaveAttribute(
+      'href',
+      '/tools',
+    );
     await expect(page.locator('[data-scenario="cod-stock"]')).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Ask', exact: true })).toBeDisabled();
     await expect(page.getByTestId('trace-paused')).toBeVisible();
     expect(calls).toBe(0);
   });
 
-  test('PLAYGROUND_DISABLED from the API (status was stale) points to the Tools explorer', async ({ page }) => {
+  test('PLAYGROUND_DISABLED from the API (status was stale) points to the Tools explorer', async ({
+    page,
+  }) => {
     await mockApi(page, {
       playground: async (_req, route) => {
         await route.fulfill({
@@ -87,7 +97,10 @@ test.describe('playground', () => {
     const err = page.getByTestId('playground-error');
     await expect(err).toContainText('The live agent is paused');
     await expect(err).toContainText('use the Tools explorer, which needs no LLM');
-    await expect(err.getByRole('link', { name: 'Open the Tools explorer' })).toHaveAttribute('href', '/tools');
+    await expect(err.getByRole('link', { name: 'Open the Tools explorer' })).toHaveAttribute(
+      'href',
+      '/tools',
+    );
   });
 
   test('replayed runs are badged', async ({ page }) => {
@@ -112,7 +125,13 @@ test.describe('playground', () => {
       playground: async (_req, route) => {
         await route.fulfill({
           status: 429,
-          json: { error: { code: 'RATE_LIMITED', message: '10 questions per 10 minutes', retry_after_s: 42 } },
+          json: {
+            error: {
+              code: 'RATE_LIMITED',
+              message: '10 questions per 10 minutes',
+              retry_after_s: 42,
+            },
+          },
         });
       },
     });

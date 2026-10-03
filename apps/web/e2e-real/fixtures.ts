@@ -27,11 +27,17 @@ function describeResponse(r: Response): string {
 export const test = base.extend<{ problems: BrowserProblems }>({
   problems: [
     async ({ page }, use, testInfo) => {
-      const problems: BrowserProblems = { consoleErrors: [], pageErrors: [], failedRequests: [], httpErrors: [] };
+      const problems: BrowserProblems = {
+        consoleErrors: [],
+        pageErrors: [],
+        failedRequests: [],
+        httpErrors: [],
+      };
       const notes: string[] = [];
       page.on('console', (msg) => {
         const where = msg.location().url;
-        if (msg.type() === 'error') problems.consoleErrors.push(`${msg.text()}${where ? ` (${where})` : ''}`);
+        if (msg.type() === 'error')
+          problems.consoleErrors.push(`${msg.text()}${where ? ` (${where})` : ''}`);
         else if (msg.type() === 'warning') notes.push(`console warning: ${msg.text()}`);
       });
       page.on('pageerror', (err) => problems.pageErrors.push(`${err.name}: ${err.message}`));
@@ -48,7 +54,10 @@ export const test = base.extend<{ problems: BrowserProblems }>({
       await use(problems);
 
       if (notes.length > 0) {
-        await testInfo.attach('browser-notes.txt', { body: notes.join('\n'), contentType: 'text/plain' });
+        await testInfo.attach('browser-notes.txt', {
+          body: notes.join('\n'),
+          contentType: 'text/plain',
+        });
       }
       expect(problems, 'the browser reported errors or failed requests during this test').toEqual({
         consoleErrors: [],
@@ -75,7 +84,11 @@ function apiBaseOf(url: string, route: string): string {
   return `${u.origin}${path}`.replace(/\/+$/, '');
 }
 
-async function observe<T>(page: Page, route: string, action: () => Promise<unknown>): Promise<Observed<T>> {
+async function observe<T>(
+  page: Page,
+  route: string,
+  action: () => Promise<unknown>,
+): Promise<Observed<T>> {
   const pending = page.waitForResponse(
     (r) => r.request().method() === 'GET' && new URL(r.url()).pathname.endsWith(route),
   );

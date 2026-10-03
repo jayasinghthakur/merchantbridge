@@ -11,7 +11,10 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
-  reporter: [['list']],
+  // CI also writes an HTML report (uploaded as an artifact by the e2e job in .github/workflows/ci.yml).
+  reporter: process.env.CI
+    ? [['list'], ['html', { open: 'never', outputFolder: 'playwright-report/mocked' }]]
+    : [['list']],
   timeout: 45_000,
   expect: { timeout: 10_000 },
   use: {

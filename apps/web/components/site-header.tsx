@@ -23,7 +23,9 @@ function NavLinks({ pathname, className }: { pathname: string; className: string
               href={item.href}
               aria-current={active ? 'page' : undefined}
               className={`inline-flex h-9 items-center rounded-sm px-2.5 text-sm font-semibold transition-colors sm:px-3 ${
-                active ? 'bg-brand-soft text-brand-ink' : 'text-ink-muted hover:bg-sunken hover:text-ink'
+                active
+                  ? 'bg-brand-soft text-brand-ink'
+                  : 'text-ink-muted hover:bg-sunken hover:text-ink'
               }`}
             >
               {item.label}
@@ -47,7 +49,10 @@ export function SiteHeader() {
       </a>
       <nav aria-label="Main" className="mx-auto flex max-w-6xl flex-col px-4 sm:px-6">
         <div className="flex h-14 items-center justify-between gap-3">
-          <Link href="/" className="flex items-center gap-2 rounded-sm font-bold tracking-tight text-ink">
+          <Link
+            href="/"
+            className="flex items-center gap-2 rounded-sm font-bold tracking-tight text-ink"
+          >
             <LogoMark />
             <span>MerchantBridge</span>
           </Link>

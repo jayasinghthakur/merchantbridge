@@ -39,6 +39,77 @@ jobs:
       - run: pnpm test
       - run: pnpm --filter @mb/web build
 
+  # Browser suites (Chromium). Mocked: `next dev` with page.route() mocks, no API. Real stack: the API in development
+  # mode (in-memory stores, FakeZoho, no secrets, so /connect and the playground show their disabled states) plus a
+  # production build of the web app, driven with no mocks. Screenshots (390/1440 px, light/dark) and the HTML reports
+  # are uploaded on every run, pass or fail.
+  e2e:
+    name: browser e2e (mocked + real stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @mb/web exec playwright install --with-deps chromium
+
+      - name: Mocked e2e (next dev on :3107, page.route mocks)
+        run: pnpm --filter @mb/web e2e
+
+      - name: Build web against the local API
+        run: pnpm --filter @mb/web build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8787
+
+      - name: Start API (:8787, development, in-memory) and web (:3000)
+        run: |
+          NODE_ENV=development PORT=8787 nohup pnpm --filter @mb/api start > api.log 2>&1 &
+          nohup pnpm --filter @mb/web start > web.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:8787/health/ready > /dev/null 2>&1 &&
+              curl -fsS -o /dev/null http://localhost:3000/ 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8787/health/ready
+          curl -fsS -o /dev/null -w 'web: HTTP %{http_code}\n' http://localhost:3000/
+
+      - name: Real-stack e2e (no mocks)
+        run: pnpm --filter @mb/web exec playwright test -c playwright.real.config.ts
+
+      - name: Server logs
+        if: always()
+        run: |
+          echo '--- api.log'; tail -n 200 api.log || true
+          echo '--- web.log'; tail -n 100 web.log || true
+
+      - name: Upload screenshots and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/web/e2e/screenshots/
+            apps/web/e2e-real/screenshots/
+            apps/web/playwright-report/
+            apps/web/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
   # Builds the Fly image exactly as deploys do (context = repo root), without pushing it anywhere. Docker is not
   # installed on the dev machine, so this job is the first real build of apps/api/Dockerfile.
   docker:
@@ -75,6 +146,12 @@ jobs:
           fi
           echo "$out"
           echo "$out" | grep -q 'Production requires'
+          # The local fake-live mode is refused in production, before any other config check.
+          if out=$(docker run --rm -e MB_DEV_FAKE_ZOHO=true "$IMAGE" 2>&1); then
+            echo "::error::server started in production mode with MB_DEV_FAKE_ZOHO=true"; exit 1
+          fi
+          echo "$out"
+          echo "$out" | grep -q 'MB_DEV_FAKE_ZOHO=true is a local development mode'
           # Development mode: health, MCP demo tools/list, then SIGTERM must exit 0 (graceful shutdown).
           docker run -d --name mb-api -p 127.0.0.1:8787:8787 -e NODE_ENV=development "$IMAGE"
           for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/health/live && break; sleep 1; done

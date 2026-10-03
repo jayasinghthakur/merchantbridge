@@ -8,6 +8,16 @@ export function prettyJson(value: unknown): string {
   }
 }
 
-export function JsonView({ value, label, testId }: { value: unknown; label: string; testId?: string }) {
-  return <CodeBlock code={prettyJson(value)} label={label} copyLabel={`Copy ${label}`} testId={testId} />;
+export function JsonView({
+  value,
+  label,
+  testId,
+}: {
+  value: unknown;
+  label: string;
+  testId?: string;
+}) {
+  return (
+    <CodeBlock code={prettyJson(value)} label={label} copyLabel={`Copy ${label}`} testId={testId} />
+  );
 }
