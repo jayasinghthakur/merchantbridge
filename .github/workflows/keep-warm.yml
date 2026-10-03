@@ -1,0 +1,51 @@
+# Keeps the free Hugging Face Space awake. Free Spaces sleep after a period without traffic (about 48 hours,
+# approximate), and the first request after that waits for a cold start. A GET of /health/live every 6 hours is traffic
+# through the Space's public URL; it touches neither Postgres nor Redis, so it costs no Neon compute and no Upstash
+# commands.
+#
+# Needs the repository variable API_URL (the Space's app URL, e.g. https://<owner>-<space>.hf.space); skips without it.
+# GitHub runs schedules from the default branch only, and disables scheduled workflows in a public repository after
+# 60 days without repository activity: re-enable it on the Actions tab (or push a commit) if that happens.
+name: Keep warm
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: GET /health/live
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      API_URL: ${{ vars.API_URL }}
+    steps:
+      # While a Space is waking or rebuilding, its URL may answer with something other than the API (an error or a
+      # holding page), so success means the API's own JSON body, not just an HTTP status. ~10 minutes of retries
+      # covers a cold start.
+      - name: Ping the API
+        shell: bash
+        run: |
+          if [ -z "${API_URL}" ]; then
+            echo "::notice title=Keep-warm skipped::Set the API_URL repository variable (the Space's app URL) to keep the API awake."
+            exit 0
+          fi
+          url="${API_URL%/}/health/live"
+          for attempt in $(seq 1 20); do
+            body="$(curl -sS --max-time 30 "$url" 2>&1 || true)"
+            if printf '%s' "$body" | grep -q '"ok":true'; then
+              echo "awake after ${attempt} attempt(s): ${body}"
+              exit 0
+            fi
+            echo "attempt ${attempt}: not ready yet ($(printf '%s' "$body" | head -c 120 | tr '\n' ' '))"
+            sleep 30
+          done
+          echo "::error::${url} did not answer {\"ok\":true} within ~10 minutes. Check the Space's logs."
+          exit 1

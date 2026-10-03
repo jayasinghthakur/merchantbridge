@@ -1,10 +1,12 @@
 # Integration: merchant onboarding in 10 minutes
 
-Who this is for: a merchant (or the FDE helping them) who wants their Claude agents to read Zoho Inventory. The result
+Who this is for: a merchant (or the FDE helping them) who wants their AI agents (Claude Code, the Claude Agent SDK,
+Claude.ai or any other MCP host) to read Zoho Inventory. The result
 is one read-only connection per Zoho organization, shared by every agent the merchant runs through one API key (v1
 issues exactly one key per connect).
 
-Placeholders: `API` = the MerchantBridge API origin (e.g. `https://<app>.fly.dev`), `WEB` = the site.
+Placeholders: `API` = the MerchantBridge API origin (e.g. `https://<owner>-<space>.hf.space`, the Hugging Face
+Space), `WEB` = the site.
 
 ## 0. Before you start (1 min)
 
@@ -162,8 +164,10 @@ pnpm dev:web   # Next.js on http://localhost:3000
 claude mcp add --transport http mb-demo http://localhost:8787/mcp/demo
 ```
 
-The explorer at `/tools` works without any key. The playground needs `ANTHROPIC_API_KEY` and
-`MB_PLAYGROUND_ENABLED=true` in the environment of `pnpm dev:api` (apps/api loads no `.env` file). Without the Zoho
+The explorer at `/tools` works without any key. The playground needs a model key and `MB_PLAYGROUND_ENABLED=true`
+in the environment of `pnpm dev:api` (apps/api loads no `.env` file): `MB_LLM_API_KEY` for the free default (Groq's
+OpenAI-compatible API, `llama-3.3-70b-versatile`; `MB_LLM_BASE_URL` for any other OpenAI-compatible endpoint), or
+`ANTHROPIC_API_KEY` with `MB_LLM_PROVIDER=anthropic` (paid). Without the Zoho
 variables below, `/oauth/zoho/start` redirects to `/connect/error?reason=connect_disabled`.
 
 **Local live leg against a fake Zoho (2 min):** `pnpm dev:api:fake-live` (`MB_DEV_FAKE_ZOHO=true`) runs steps 1-5 of
@@ -182,25 +186,29 @@ answered in-process and any other outbound host is refused. It is refused with `
    tokens.
 2. Postgres (Neon or any) and Redis (Upstash or any); production refuses to start without `DATABASE_URL` and
    `REDIS_URL`. Apply `packages/db/drizzle/*.sql` with
-   `DATABASE_URL=... pnpm --filter @mb/api exec tsx scripts/migrate.ts` (on Fly this is the `release_command`).
+   `DATABASE_URL=... pnpm --filter @mb/api exec tsx scripts/migrate.ts`, by hand before each deploy that adds a
+   migration (on Fly it is the `release_command`).
 3. Environment (names from `apps/api/src/config.ts`):
 
-| Variable                                                                                       | Purpose                                                                                             |
-| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `MB_PUBLIC_API_URL`, `MB_PUBLIC_WEB_URL`                                                       | public origins; API host is added to the MCP Host allow-list                                        |
-| `MB_ALLOWED_HOSTS`, `MB_CORS_ORIGINS`                                                          | extra hostnames for the Host check; browser origins for `/api/*`                                    |
-| `DATABASE_URL`, `REDIS_URL`                                                                    | stores and governor/cache/locks                                                                     |
-| `MB_ENCRYPTION_KEY`                                                                            | base64 of 32 random bytes (`openssl rand -base64 32`); encrypts refresh tokens                      |
-| `MB_STATE_SECRET`                                                                              | HMAC key for OAuth `state`                                                                          |
-| `MB_CONNECT_INVITE_CODE`                                                                       | gate for `/connect`                                                                                 |
-| `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REDIRECT_URI`                                    | the PROD Zoho client                                                                                |
-| `ANTHROPIC_API_KEY`, `MB_PLAYGROUND_ENABLED`, `MB_PLAYGROUND_MODEL`, `MB_PLAYGROUND_DAILY_CAP` | playground (use a spend-capped workspace key)                                                       |
-| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`                                                   | bot check on the first playground message                                                           |
-| `MB_TRUSTED_EGRESS_CIDRS`                                                                      | CIDRs (e.g. Anthropic MCP egress) that share a larger `/mcp/demo` bucket                            |
-| `MB_CLIENT_IP_SOURCE`                                                                          | `socket`, `fly-client-ip` (default on Fly) or `xff-last`; source of the caller IP for per-IP limits |
-| `MB_METRICS_TOKEN`                                                                             | bearer token for `/metrics` (404 in production without it)                                          |
+| Variable                                                                  | Purpose                                                                                                                                                                  |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MB_PUBLIC_API_URL`, `MB_PUBLIC_WEB_URL`                                  | public origins; API host is added to the MCP Host allow-list                                                                                                             |
+| `MB_ALLOWED_HOSTS`, `MB_CORS_ORIGINS`                                     | extra hostnames for the Host check; browser origins for `/api/*`                                                                                                         |
+| `DATABASE_URL`, `REDIS_URL`                                               | stores and governor/cache/locks                                                                                                                                          |
+| `MB_ENCRYPTION_KEY`                                                       | base64 of 32 random bytes (`openssl rand -base64 32`); encrypts refresh tokens                                                                                           |
+| `MB_STATE_SECRET`                                                         | HMAC key for OAuth `state`                                                                                                                                               |
+| `MB_CONNECT_INVITE_CODE`                                                  | gate for `/connect`                                                                                                                                                      |
+| `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REDIRECT_URI`               | the PROD Zoho client                                                                                                                                                     |
+| `MB_LLM_PROVIDER`, `MB_LLM_BASE_URL`, `MB_LLM_API_KEY`                    | playground and evals model: `openai` (any OpenAI-compatible endpoint; default Groq's free tier) or `anthropic`; see [deploy.md](deploy.md#3-space-variables-and-secrets) |
+| `ANTHROPIC_API_KEY`                                                       | optional, paid: only with `MB_LLM_PROVIDER=anthropic`                                                                                                                    |
+| `MB_PLAYGROUND_ENABLED`, `MB_PLAYGROUND_MODEL`, `MB_PLAYGROUND_DAILY_CAP` | playground switch, model (default `llama-3.3-70b-versatile` for `openai`), questions per UTC day                                                                         |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`                              | bot check on the first playground message                                                                                                                                |
+| `MB_TRUSTED_EGRESS_CIDRS`                                                 | CIDRs (e.g. Anthropic MCP egress) that share a larger `/mcp/demo` bucket                                                                                                 |
+| `MB_CLIENT_IP_SOURCE`                                                     | `socket`, `fly-client-ip` (default on Fly) or `xff-last` (Hugging Face Spaces); source of the caller IP for per-IP limits                                                |
+| `MB_METRICS_TOKEN`                                                        | bearer token for `/metrics` (404 in production without it)                                                                                                               |
 
 `/connect` is disabled unless all Zoho, encryption, state and invite variables are set.
 
-4. Deploy `apps/api` (Fly.io, `min_machines_running = 1`, so SSE and MCP stay warm) and `apps/web` (Vercel); the
-   full procedure is [deploy.md](deploy.md). Verify `API/health/ready`, then repeat steps 1-3 above against your URLs.
+4. Deploy `apps/api` (a free Hugging Face Docker Space, kept awake by a scheduled ping; Fly.io is an optional paid
+   alternative) and `apps/web` (Vercel Hobby); the full $0 procedure is [deploy.md](deploy.md). Verify
+   `API/health/ready`, then repeat steps 1-3 above against your URLs.

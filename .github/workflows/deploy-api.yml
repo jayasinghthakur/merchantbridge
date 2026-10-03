@@ -1,4 +1,6 @@
-name: Deploy API
+# OPTIONAL, PAID ALTERNATIVE to .github/workflows/deploy-hf-space.yml (the free primary host, ADR-0009).
+# Without the FLY_API_TOKEN secret this job only posts a "Deploy skipped" notice and succeeds, so it is safe to keep.
+name: Deploy API to Fly.io (optional)
 
 on:
   push:
@@ -29,16 +31,17 @@ jobs:
     timeout-minutes: 20
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      # Repo variables (Settings → Variables). FLY_CONFIG defaults to the api app's fly.toml.
+      # Repo variables (Settings → Variables). FLY_CONFIG defaults to the api app's fly.toml. FLY_API_URL is the Fly
+      # app's origin (API_URL belongs to the primary host and the keep-warm workflow).
       FLY_CONFIG: ${{ vars.FLY_CONFIG || 'apps/api/fly.toml' }}
-      API_URL: ${{ vars.API_URL }}
+      FLY_API_URL: ${{ vars.FLY_API_URL }}
     steps:
       # Secrets cannot be used in `if:` directly, so a first step turns "is the token set?" into an output.
       - name: Check deploy credentials
         id: gate
         run: |
           if [ -z "${FLY_API_TOKEN}" ]; then
-            echo "::notice title=Deploy skipped::FLY_API_TOKEN is not set for this repository; nothing was deployed."
+            echo "::notice title=Fly deploy skipped::FLY_API_TOKEN is not set (Fly.io is the optional paid host); nothing was deployed to Fly."
             echo "deploy=false" >> "$GITHUB_OUTPUT"
           else
             echo "deploy=true" >> "$GITHUB_OUTPUT"
@@ -65,6 +68,6 @@ jobs:
           flyctl deploy . --config "$FLY_CONFIG" --remote-only
 
       - name: Health check
-        if: steps.gate.outputs.deploy == 'true' && env.API_URL != ''
+        if: steps.gate.outputs.deploy == 'true' && env.FLY_API_URL != ''
         run: |
-          curl -fsS --max-time 10 --retry 10 --retry-delay 6 --retry-all-errors "${API_URL%/}/health/ready"
+          curl -fsS --max-time 10 --retry 10 --retry-delay 6 --retry-all-errors "${FLY_API_URL%/}/health/ready"

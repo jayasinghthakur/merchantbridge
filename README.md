@@ -6,30 +6,33 @@ OAuth, shared by all of the merchant's agents, scoped to one organization, read-
 Razorpay FDE take-home, Option 3 (private connector for a merchant tool). Independent work; not affiliated with
 Razorpay or Zoho.
 
-|                                        |                                                                         |
-| -------------------------------------- | ----------------------------------------------------------------------- |
-| Live site                              | `LIVE_SITE_URL` **TODO: not deployed yet**                              |
-| Demo MCP endpoint (no auth, fake data) | `DEMO_MCP_URL` **TODO: `https://<api>/mcp/demo` after deploy**          |
-| 2-minute video of the real Zoho OAuth  | `VIDEO_URL` **TODO: recorded after the trial org is connected on prod** |
-| Status, next steps, open questions     | [`docs/STATUS.md`](docs/STATUS.md)                                      |
-| Agent contract (CAN / CANNOT / LIMITS) | [`docs/agent-capabilities.md`](docs/agent-capabilities.md)              |
-| Tool specification (generated)         | [`docs/mcp-tools.json`](docs/mcp-tools.json)                            |
+|                                        |                                                                                   |
+| -------------------------------------- | --------------------------------------------------------------------------------- |
+| Live site                              | `LIVE_SITE_URL` **TODO: not deployed yet**                                        |
+| Demo MCP endpoint (no auth, fake data) | `DEMO_MCP_URL` **TODO: `https://<owner>-<space>.hf.space/mcp/demo` after deploy** |
+| 2-minute video of the real Zoho OAuth  | `VIDEO_URL` **TODO: recorded after the trial org is connected on prod**           |
+| Status, next steps, open questions     | [`docs/STATUS.md`](docs/STATUS.md)                                                |
+| Deploy for $0 (free tiers, no card)    | [`docs/deploy.md`](docs/deploy.md)                                                |
+| Agent contract (CAN / CANNOT / LIMITS) | [`docs/agent-capabilities.md`](docs/agent-capabilities.md)                        |
+| Tool specification (generated)         | [`docs/mcp-tools.json`](docs/mcp-tools.json)                                      |
 
 ## Verification status
 
 **What has and has not been run.** Everything marked verified ran on 2026-10-03 on a developer machine with **no Zoho
-and no Anthropic credentials**. Nothing is deployed, and CI has never run (there is no GitHub remote yet).
+and no LLM credentials**. Nothing is deployed yet. The code is on GitHub
+([jayasinghthakur/merchantbridge](https://github.com/jayasinghthakur/merchantbridge)); CI results are not recorded
+here yet.
 
-| Status       | What                                                                     | Evidence                                                                                                                                                                                                                                     |
-| ------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Verified     | Unit, contract and integration tests                                     | `pnpm test` (Vitest; FakeZoho, PGlite, in-memory Kv; never real Zoho). Counts in [Testing](#testing).                                                                                                                                        |
-| Verified     | FakeZoho demo: `/mcp/demo`, `/tools` explorer, playground UI states      | MCP `tools/list` / `tools/call` over HTTP (curl, the Python client) plus both browser suites.                                                                                                                                                |
-| Verified     | Real-stack browser suite                                                 | [`playwright.real.config.ts`](apps/web/playwright.real.config.ts): 7 behavioural + 28 visual checks, 35/35 against a local credential-free API and `next start`. Added to CI (`e2e` job) with screenshots as an artifact; not run there yet. |
-| Verified     | Authenticated `/mcp`, OAuth connect and disconnect (against a fake Zoho) | [Fake-live mode](#fake-live-mode-the-authenticated-leg-without-zoho): bearer-key `tools/list` and `tools/call` (`meta.demo: false`), connect through a fake consent page, disconnect `200` then `401` on `/mcp`.                             |
-| Verified     | Python client                                                            | [`examples/python/mcp_demo_client.py`](examples/python/mcp_demo_client.py) (stdlib only) against a local `/mcp/demo`, and with `MB_API_KEY` against fake-live `/mcp` (`demo=False`).                                                         |
-| Not verified | Real Zoho OAuth and Inventory API                                        | Pending the human-run `pnpm smoke` against the Zoho trial org ([ADR-0001](docs/adr/0001-zoho-api-assumptions-and-smoke-results.md) probes) and connecting that org.                                                                          |
-| Not verified | Real Claude model runs (playground answers, evals)                       | Pending `pnpm evals` with `ANTHROPIC_API_KEY` set; the [pass-rate table](#evals) is TODO.                                                                                                                                                    |
-| Not verified | Production deploy, CI, Docker image                                      | Fly, Vercel, Neon, Upstash not set up; the CI jobs (including the Docker build and the `e2e` job) have never run.                                                                                                                            |
+| Status       | What                                                                     | Evidence                                                                                                                                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Verified     | Unit, contract and integration tests                                     | `pnpm test` (Vitest; FakeZoho, PGlite, in-memory Kv; never real Zoho). Counts in [Testing](#testing).                                                                                                                                                       |
+| Verified     | FakeZoho demo: `/mcp/demo`, `/tools` explorer, playground UI states      | MCP `tools/list` / `tools/call` over HTTP (curl, the Python client) plus both browser suites.                                                                                                                                                               |
+| Verified     | Real-stack browser suite                                                 | [`playwright.real.config.ts`](apps/web/playwright.real.config.ts): 7 behavioural + 28 visual checks, 35/35 against a local credential-free API and `next start`. Added to CI (`e2e` job) with screenshots as an artifact; CI results not recorded here yet. |
+| Verified     | Authenticated `/mcp`, OAuth connect and disconnect (against a fake Zoho) | [Fake-live mode](#fake-live-mode-the-authenticated-leg-without-zoho): bearer-key `tools/list` and `tools/call` (`meta.demo: false`), connect through a fake consent page, disconnect `200` then `401` on `/mcp`.                                            |
+| Verified     | Python client                                                            | [`examples/python/mcp_demo_client.py`](examples/python/mcp_demo_client.py) (stdlib only) against a local `/mcp/demo`, and with `MB_API_KEY` against fake-live `/mcp` (`demo=False`).                                                                        |
+| Not verified | Real Zoho OAuth and Inventory API                                        | Pending the human-run `pnpm smoke` against the Zoho trial org ([ADR-0001](docs/adr/0001-zoho-api-assumptions-and-smoke-results.md) probes) and connecting that org.                                                                                         |
+| Not verified | Real LLM runs (playground answers, evals)                                | Pending `pnpm evals` with `MB_LLM_API_KEY` (a free Groq key) set; the [pass-rate table](#evals) is TODO.                                                                                                                                                    |
+| Not verified | Production deploy, Docker image                                          | Hugging Face Space, Vercel, Neon, Upstash not set up ([$0 deploy guide](docs/deploy.md)); the image is built only in CI (no Docker on the dev machine).                                                                                                     |
 
 ## Local quickstart (no credentials)
 
@@ -48,11 +51,20 @@ URL shown on the site and the OAuth redirect). Web `:3000` (pinned by its `dev`/
 from `MB_PUBLIC_WEB_URL`, default `http://localhost:3000`). The web finds the API through `NEXT_PUBLIC_API_URL`
 (default `http://localhost:8787`; inlined at build time, so rebuild after changing it).
 
-**Playground.** It needs a model. `apps/api` reads only its process environment (it loads no `.env` file):
+**Playground.** It needs a model; the default is free. `apps/api` reads only its process environment (it loads no
+`.env` file):
 
 ```sh
-ANTHROPIC_API_KEY=... MB_PLAYGROUND_ENABLED=true pnpm dev:api
+# Groq free tier (no card; key from console.groq.com): Llama 3.3 70B through the OpenAI-compatible API
+MB_LLM_API_KEY=gsk_... MB_PLAYGROUND_ENABLED=true pnpm dev:api
+# Any other OpenAI-compatible endpoint (Gemini's, OpenRouter free models, a local Ollama at http://localhost:11434/v1)
+MB_LLM_BASE_URL=... MB_LLM_API_KEY=... MB_PLAYGROUND_MODEL=... MB_PLAYGROUND_ENABLED=true pnpm dev:api
+# Claude instead (paid Anthropic API)
+MB_LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=... MB_PLAYGROUND_ENABLED=true pnpm dev:api
 ```
+
+The provider rules (`MB_LLM_PROVIDER`, `MB_LLM_BASE_URL`, `MB_LLM_API_KEY`, `MB_PLAYGROUND_MODEL`) are in
+[`docs/deploy.md`](docs/deploy.md#3-space-variables-and-secrets).
 
 **Use the demo server from Claude Code, or inspect it:**
 
@@ -95,7 +107,7 @@ state and cookie, `accounts-server` allow-list, code exchange, vault, organizati
 What is real and what is fake: all MerchantBridge code runs unchanged; only the network is replaced. Zoho Accounts
 (token, revoke) and the IN Inventory API are answered in-process
 ([`apps/api/src/dev/fake-upstream.ts`](apps/api/src/dev/fake-upstream.ts)), and any other outbound host throws
-(the playground's Anthropic client is separate and runs only if you set `ANTHROPIC_API_KEY`).
+(the playground's LLM client is separate and runs only if you set an LLM key).
 Missing `MB_ENCRYPTION_KEY`, `MB_STATE_SECRET`, `ZOHO_CLIENT_ID`/`_SECRET`/`_REDIRECT_URI` and
 `MB_CONNECT_INVITE_CODE` get ephemeral dev-only values (the log lists their names, never the values). The key, the
 secrets and all data reset on every restart, including `tsx watch` restarts. The server refuses to start with
@@ -132,9 +144,9 @@ playground model key.
 1. Open the live site and click **Try it in the playground**. Every demo surface carries a **DEMO DATA** badge
    ("Chai & Co (DEMO)", served by FakeZoho, a wire-accurate fake of the Zoho API).
 2. Click a scenario card, e.g. **Dispute Responder**: "A customer disputed Razorpay payment `pay_DEMO8xK2`. Build an
-   evidence pack". A real Claude agent (`claude-haiku-4-5`) calls the real MCP server; the trace pane shows each tool,
-   its arguments, latency, cache hits, governor decisions, budget left and error code. A correct answer cites
-   INV-00005, SO-00007 and Delhivery tracking 1490811234567, delivered.
+   evidence pack". A live LLM agent (Llama 3.3 70B on Groq's free tier by default) calls the real MCP server; the
+   trace pane shows each tool, its arguments, latency, cache hits, governor decisions, budget left and error code. A
+   correct answer cites INV-00005, SO-00007 and Delhivery tracking 1490811234567, delivered.
 3. Flip **Zoho 429 (code 44)** and ask again: the governor opens a 60 s circuit and the tool returns a structured
    `RATE_LIMITED` result with `retry_after_s`. Flip **Expired token**: one single-flight refresh, and the trace shows
    **token refreshed** then **retried after token refresh**. Four more faults sit under "More faults" (code 45, code
@@ -165,8 +177,8 @@ flowchart LR
   H1["Claude Code / Agent SDK / Messages API"] -->|"POST /mcp, Bearer mb_live_"| LIVE
   H2["Any MCP client, Claude.ai connector"] -->|"POST /mcp/demo, public"| DEMO
   M["Merchant browser"] -->|"/oauth/zoho/start, /callback"| OA
-  subgraph A["apps/api (Fastify, Fly.io)"]
-    PG["Explorer + playground: in-process MCP client, Claude toolRunner"] --> DEMO
+  subgraph A["apps/api (Fastify, Hugging Face Space)"]
+    PG["Explorer + playground: in-process MCP client, LLM tool loop (Groq / OpenAI-compatible, or Claude)"] --> DEMO
     OA["OAuth connect + POST /api/connection/disconnect"]
     DEMO["MCP /mcp/demo: demo tenant, per-session FakeZoho"] --> RT
     LIVE["MCP /mcp: tenant from hashed key"] --> RT
@@ -223,7 +235,7 @@ as_of, cached, zoho_url, budget_remaining_today, demo } }`; errors are `isError`
 
 ```
 apps/api                 Fastify: /mcp, /mcp/demo, /oauth/zoho/*, /api/{status,tools,scenarios,explorer/call,playground},
-                         /api/connection/disconnect, /health/{live,ready}, /metrics; Dockerfile + fly.toml;
+                         /api/connection/disconnect, /health/{live,ready}, /metrics; Dockerfile (+ optional fly.toml);
                          src/dev/: local fake-live mode (fake Zoho Accounts + FakeZoho, dev only)
 apps/web                 Next.js 16 site: /, /playground, /tools, /connect (+ success, error), /docs; e2e/ and e2e-real/
 packages/core            frozen contract: defineTool, ToolRuntime, envelope, errors, Kv, Clock, cursors, money, masking,
@@ -234,7 +246,8 @@ packages/db              Drizzle schema + migrations (tenants, api_keys, connect
 packages/zoho-inventory  ZohoClient, mappers, 10 tools, FakeZoho (wire format, demo dataset, 6 faults)
 evals/                   17 cases + harness over the playground engine; offline CI suite in evals/test
 scripts/smoke.ts         real-Zoho probes (human-run only)
-docs/                    PLAN, STATUS, capabilities, integration, deploy, runbook, ADRs 0001-0008, notes, vendored specs
+deploy/hf-space/         Hugging Face Space card + assemble.sh (the $0 API host; see docs/deploy.md)
+docs/                    PLAN, STATUS, capabilities, integration, deploy, runbook, ADRs 0001-0009, notes, vendored specs
 .claude/                 Claude Code toolkit: settings + hooks, commands, add-tool skill, subagents
 ```
 
@@ -267,15 +280,17 @@ Browser suites in `apps/web` (Playwright, Chromium; commands in [Browser suites]
   2026-10-03 against the credential-free API: 35/35 passed.
 - **Screenshots:** both suites write PNGs (gitignored). In CI the `e2e` job uploads `apps/web/e2e/screenshots/`,
   `apps/web/e2e-real/screenshots/` and the HTML reports as the **`playwright-<run id>-<attempt>` artifact** of every
-  run, pass or fail (Actions run page, "Artifacts"). CI has not run yet (no GitHub remote), so no artifact exists
-  today; locally they are in the folders above.
+  run, pass or fail (Actions run page, "Artifacts"); no artifact is linked here yet. Locally they are in the folders
+  above.
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): lint, typecheck, test, web build; the `e2e` job (mocked
 suite, then the API in development mode and a production web build on :8787/:3000 for the real-stack suite);
 Docker image build with a boot smoke test (production refuses to start without its secrets or with
 `MB_DEV_FAKE_ZOHO=true`; health, MCP `tools/list`, the stdlib Python client in
 [`examples/python/`](examples/python/mcp_demo_client.py), graceful shutdown); gitleaks. CodeQL and Dependabot run
-separately.
+separately. Deploys: [`deploy-hf-space.yml`](.github/workflows/deploy-hf-space.yml) pushes the API to the free
+Hugging Face Space, [`keep-warm.yml`](.github/workflows/keep-warm.yml) pings it every 6 h, and
+[`deploy-api.yml`](.github/workflows/deploy-api.yml) (Fly.io, optional and paid) skips without its token.
 
 ## Evals
 
@@ -283,14 +298,18 @@ separately.
 prompt injection planted in an item description, and 8 tool-specific questions; every tool is required by at least
 one case. Each case asserts required tools (and forbidden ones where set), a tool-call ceiling and facts in the
 answer.
-`pnpm evals` runs them through the playground engine against the in-process demo endpoint on `claude-sonnet-5-5` and
-`claude-haiku-4-5` and writes `evals/reports/`; the run fails if Sonnet scores below 90%. Without `ANTHROPIC_API_KEY`
-it skips and makes no model calls.
+`pnpm evals` runs them through the playground engine against the in-process demo endpoint and writes
+`evals/reports/`. By default it uses the free OpenAI-compatible provider (Groq, `MB_LLM_API_KEY`) on
+`llama-3.3-70b-versatile`, and the run fails if that model scores below 90%: the gate runs on the model visitors
+actually get ([ADR-0009](docs/adr/0009-free-tier-stack.md)). `--base-url` points it at another OpenAI-compatible
+endpoint; `pnpm evals -- --provider anthropic` (with `ANTHROPIC_API_KEY`, paid) runs the Claude models instead.
+Without a key it skips and makes no model calls. Free-tier note: Groq allows this model roughly 100K tokens per day
+(approximate), less than one full run, so split it across days with `--cases <ids>` (and `--delay-ms` to stay under
+the per-minute limits).
 
-| Model               | Pass rate             |
-| ------------------- | --------------------- |
-| `claude-sonnet-5-5` | **TODO: not run yet** |
-| `claude-haiku-4-5`  | **TODO: not run yet** |
+| Model                     | Pass rate             |
+| ------------------------- | --------------------- |
+| `llama-3.3-70b-versatile` | **TODO: not run yet** |
 
 ## Security
 
@@ -305,8 +324,9 @@ it skips and makes no model calls.
   Session ids come from `X-MB-Session`; callers without one get a server-derived `ip-` session that clients cannot
   name. `/mcp/demo` answers HTTP 400 when `X-MB-Faults` names an unknown fault or arrives without a valid client
   `X-MB-Session` (faults never apply to the shared per-IP session), instead of silently ignoring the header.
-- **Client IP:** `MB_CLIENT_IP_SOURCE` = `socket` (default), `fly-client-ip` (default on Fly) or `xff-last`; IPv6
-  callers are bucketed by /64. Client-sent `X-Forwarded-For` is never trusted by default.
+- **Client IP:** `MB_CLIENT_IP_SOURCE` = `socket` (default), `fly-client-ip` (default on Fly) or `xff-last` (the
+  setting for the Hugging Face Space: the right-most `X-Forwarded-For` entry, added by the platform's proxy); IPv6
+  callers are bucketed by /64. Client-sent `X-Forwarded-For` is never trusted unless `xff-last` is chosen.
 - **Abuse and cost:** `/mcp/demo` 60/min per IP; `/mcp` 600/min per key and 30 failed key lookups per IP per minute;
   explorer 30/min per IP; playground 10 questions per 10 min per IP, then Turnstile, and only then the global daily cap
   (300), so bots cannot burn it; per question at most 10 tool calls, 6 model turns and 120K input tokens.
@@ -333,9 +353,14 @@ it skips and makes no model calls.
 - **No OAuth on the MCP leg yet:** live tenants use a bearer key, so Claude.ai can use only the demo endpoint.
 - **No replay fallback in the playground:** when the model budget or rate limit is hit, the playground shows an error
   and points to the explorer, which needs no LLM.
-- **`Fly-Client-IP` spoofability is unverified on prod:** the per-IP limits assume Fly's edge overwrites a
-  client-sent value; [`docs/deploy.md`](docs/deploy.md#11-verify-production) has the 61-request probe.
-- **The Docker image is first built in CI** (no Docker on the dev machine); the first `fly deploy` waits for that job.
+- **Client-IP handling on the Hugging Face Space is unverified:** the per-IP limits assume the platform's proxy
+  appends the real caller to `X-Forwarded-For` (`xff-last`); [`docs/deploy.md`](docs/deploy.md#8-verify-production)
+  has the spoofing and shared-bucket probes.
+- **Free tiers have limits** ([ADR-0009](docs/adr/0009-free-tier-stack.md)): Groq's daily token allowance covers only
+  a handful of playground questions per day, the free Space sleeps after about 48 h without traffic (a keep-warm
+  workflow pings it every 6 h) and restarts on every deploy, and Vercel Hobby is for non-commercial use.
+- **The Docker image is first built in CI** (no Docker on the dev machine); the Space deploy workflow also builds it
+  before pushing.
 - Zoho facts not yet smoke-tested: the field holding Razorpay references, sales-order ordering, `zoho_url` deep-link
   routes, 429 recovery and daily reset times ([ADR-0001](docs/adr/0001-zoho-api-assumptions-and-smoke-results.md),
   [ADR-0005](docs/adr/0005-governor-defaults-for-undocumented-429-behaviour.md)).
@@ -361,4 +386,4 @@ it skips and makes no model calls.
 The toolkit is committed in [`.claude/`](.claude/): `settings.json` (permissions that deny `.env*` access and secret
 commands; a guard hook that blocks `.env` access, non-GET requests to Zoho hosts and human-only commands; format and
 stop hooks), commands `/milestone`, `/verify`, `/verify-prod`, `/ship`, the `add-tool` skill and the `zoho-verifier`,
-`security-reviewer` and `eval-analyst` subagents. It applies when Claude Code is started inside this directory. PR links: **TODO** (no GitHub remote yet).
+`security-reviewer` and `eval-analyst` subagents. It applies when Claude Code is started inside this directory. PR links: **TODO**.

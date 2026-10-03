@@ -1,8 +1,14 @@
+# OPTIONAL, PAID ALTERNATIVE. The primary host for apps/api is a free Hugging Face Docker Space
+# (deploy/hf-space/, .github/workflows/deploy-hf-space.yml, docs/deploy.md; ADR-0009). Fly.io needs a payment card and
+# bills for the always-on Machine below; this file is kept, unused, for anyone who prefers it.
+#
 # Fly.io config for apps/api. Deploy from the REPO ROOT (the Docker build context is the pnpm workspace):
 #   flyctl deploy . --config apps/api/fly.toml --remote-only
-# CI does the same on push to main (.github/workflows/deploy-api.yml). Step-by-step setup: docs/deploy.md.
+# .github/workflows/deploy-api.yml does the same on push to main, and skips (with a notice) while the FLY_API_TOKEN
+# secret is unset. Setup notes: docs/deploy.md, "Optional: Fly.io".
 #
-# Secrets are NOT in this file. The human sets them with `fly secrets set` (names in docs/deploy.md §4).
+# Secrets are NOT in this file. The human sets them with `fly secrets set` (same names as the Space secrets in
+# docs/deploy.md). On Fly, leave MB_CLIENT_IP_SOURCE unset: it defaults to fly-client-ip when FLY_APP_NAME is present.
 
 # CHANGE ME: Fly app names are global. Use the name you created with `fly apps create`; the default public host is
 # https://<app>.fly.dev, which must match the MB_PUBLIC_API_URL secret.
@@ -31,8 +37,9 @@ NODE_ENV = "production"
 HOST = "0.0.0.0"
 PORT = "8787"
 LOG_LEVEL = "info"
-MB_PLAYGROUND_MODEL = "claude-haiku-4-5"
 MB_PLAYGROUND_DAILY_CAP = "300"
+# No MB_PLAYGROUND_MODEL here: its default follows MB_LLM_PROVIDER (llama-3.3-70b-versatile for openai, i.e. Groq;
+# claude-haiku-4-5 for anthropic). Set it as a secret or [env] value only to pick another model.
 
 [http_service]
 internal_port = 8787

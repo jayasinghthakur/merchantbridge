@@ -1,6 +1,8 @@
 # Runbook
 
-Symptom -> diagnosis -> action for the failures we expect. Placeholders: `API` (API origin), `$APP` (Fly app name).
+Symptom -> diagnosis -> action for the failures we expect. Placeholders: `API` (API origin, the Hugging Face Space's
+app URL), `SPACE` (the Space id `<owner>/<space>`). Hosting is the $0 stack of [ADR-0009](adr/0009-free-tier-stack.md)
+([deploy.md](deploy.md)); Space variables and secrets are changed by the human in the Space settings.
 Never paste tokens, refresh tokens or customer PII into tickets or chats; usage events are already masked.
 
 Useful queries (Postgres, `usage_events`, one row per tool call):
@@ -89,18 +91,40 @@ token` when Zoho was unreachable, in which case that token lingers until Zoho ev
   let them drain (they happen lazily on the next call). Restarts do not lose tokens while Redis is intact; a Redis
   flush does.
 
-## LLM workspace budget exhausted (playground)
+## LLM provider rate limit or daily quota (playground)
 
-- **Symptoms:** playground questions end with an `error` trace event `BUDGET_EXHAUSTED` ("The demo has used its AI
-  budget for now") or `RATE_LIMITED` ("The AI model is busy"), or the request itself gets HTTP 429 "Today's
-  playground budget is used up". `/tools` and `/mcp/demo` keep working.
-- **Diagnosis:** the dedicated Anthropic workspace hit its spend cap ($15) or its rate limit (the API logs
-  `playground run failed` with `code` and `status`), or the global daily cap (`MB_PLAYGROUND_DAILY_CAP`, default 300
-  questions per UTC day) was reached.
-- **Action:** there is **no replay fallback** yet: the page points visitors to the Tools explorer, and reviewers can
-  still use `claude mcp add … /mcp/demo` with their own Claude. To restore live answers, raise the workspace cap in
-  the Anthropic console or wait for the window. Emergency stop: `MB_PLAYGROUND_ENABLED=false`
-  (`fly secrets set`, human only); the page then shows "Live agent paused".
+- **Symptoms:** playground questions end with an `error` trace event: `RATE_LIMITED` "The AI model is busy right now;
+  try again shortly." (with `retry_after_s` when the provider sent one), or `BUDGET_EXHAUSTED` "The demo has used its
+  AI budget for now". Or the request itself gets HTTP 429 "Today's playground budget is used up" (MerchantBridge's own
+  daily cap). `/tools` and `/mcp/demo` keep working: they need no model.
+- **Diagnosis:** the API logs `playground run failed` with `provider`, `code` and `status`. On the $0 path the provider
+  is Groq's free tier (ADR-0009), which limits requests and tokens per minute (about 30 requests/min) and per day (for
+  `llama-3.3-70b-versatile` about 1,000 requests and 100K tokens, approximate). A 429 that clears within a minute is
+  the per-minute limit (`RATE_LIMITED`); a 429 whose body mentions a daily (TPD/RPD) limit or a spent quota maps to
+  `BUDGET_EXHAUSTED` and lasts until Groq's daily window resets. Each question resends the tool schemas (about 3.4K
+  tokens) on every model turn, so the daily allowance covers only a handful of questions. The HTTP 429 instead is
+  `MB_PLAYGROUND_DAILY_CAP` (default 300 questions per UTC day). Current usage and exact limits per model: the Groq
+  console.
+- **Action:** per-minute limits clear by themselves. For the daily quota: wait for the reset, or point the Space at
+  another free OpenAI-compatible endpoint (Space variables `MB_LLM_BASE_URL`, `MB_PLAYGROUND_MODEL`, secret
+  `MB_LLM_API_KEY`; e.g. Gemini's OpenAI-compatible endpoint or an OpenRouter free model), or a smaller Groq model with
+  a larger daily allowance (check the console), then restart the Space. Lower `MB_PLAYGROUND_DAILY_CAP` so visitors see
+  MerchantBridge's own "budget used up" message before Groq's. There is **no replay fallback** yet: the page points
+  visitors to the Tools explorer, and reviewers can still use `claude mcp add … /mcp/demo` with their own Claude.
+  Emergency stop: Space variable `MB_PLAYGROUND_ENABLED=false` (human only); the page then shows "Live agent paused".
+- **Paid provider instead** (`MB_LLM_PROVIDER=anthropic`): `BUDGET_EXHAUSTED` means the Anthropic workspace hit its
+  spend cap; raise the cap in the Anthropic console or switch back to the free provider.
+
+## LLM key rejected or rotated (Groq)
+
+- **Symptoms:** every playground question ends with a generic `INTERNAL` error ("The agent hit an unexpected
+  error"); the API logs `LLM provider rejected the key` with `status` 401 or 403 (the key itself is never logged).
+  `pnpm evals` stops with "rejected the API key".
+- **Diagnosis:** the Groq key was revoked, mistyped, or belongs to another account; or `MB_LLM_BASE_URL` points at a
+  provider the key is not for.
+- **Action (rotation, also after a suspected leak):** create a new key in the Groq console; replace the Space secret
+  `MB_LLM_API_KEY` (and your local shell's copy for evals); restart the Space; run one playground card; then delete the
+  old key in the console. Never paste the key into issues, chats or variables (only the Space **secret**).
 
 ## Upstash command budget
 
@@ -119,20 +143,32 @@ token` when Zoho was unreachable, in which case that token lingers until Zoho ev
   usage-event insert fails then succeeds.
 - **Diagnosis:** Neon free tier suspends compute when idle.
 - **Action:** usage events are batched (every 2 s or 100 events) and never fail tool calls (write errors are logged,
-  not surfaced). During demo hours, an uptime check on `/health/ready` keeps compute warm at the cost of Upstash
-  commands (see above); raise the DB connect timeout if needed.
+  not surfaced). The keep-warm workflow pings `/health/live`, which does not touch Neon, so Neon still sleeps; during
+  demo hours an uptime check on `/health/ready` keeps compute warm at the cost of Upstash commands (see above); raise
+  the DB connect timeout if needed.
 
-## Fly machine down
+## API down, or the Space asleep
 
-- **Symptoms:** site loads but playground, explorer and `/mcp/demo` fail; uptime monitor alerts.
-- **Diagnosis:** `fly status -a $APP`, `fly machine list -a $APP`, `fly logs -a $APP`. Look for crash loops on env
-  validation ("Invalid environment configuration", "Production requires: DATABASE_URL, REDIS_URL", or
-  "MB_DEV_FAKE_ZOHO=true is a local development mode and is refused": unset that variable, it must never be set in
-  production) and for 403s on
-  every non-health route (the Host-header allow-list applies everywhere except `/health/*`; a custom domain missing
-  from `MB_PUBLIC_API_URL` / `MB_ALLOWED_HOSTS` causes this).
-- **Action:** fix config and redeploy via CI; `fly machine start <id> -a $APP` for a stopped machine; keep
-  `min_machines_running = 1`. Add any extra public hostname to `MB_ALLOWED_HOSTS`.
+- **Symptoms:** the site loads but the playground, explorer and `/mcp/demo` fail or hang; MCP clients time out on the
+  first call; `keep-warm.yml` fails ("did not answer {"ok":true}").
+- **Diagnosis:** open the Space page (`https://huggingface.co/spaces/SPACE`) and read its status and **Logs**.
+  - **Sleeping / paused:** a free Space sleeps after a period without traffic (about 48 h). The keep-warm workflow
+    prevents that only while GitHub runs it: GitHub disables scheduled workflows in a public repository after 60 days
+    without repository activity (Actions tab shows it disabled).
+  - **Building / restarting:** a deploy just happened (every push that touches the API rebuilds the image and restarts
+    the container) or Hugging Face restarted it; open SSE streams are cut.
+  - **Build error:** the build log shows it; the CI `docker` job builds the same Dockerfile, and the deploy workflow
+    builds before pushing, so this is usually a Hugging Face-side problem: rebuild from the Space settings.
+  - **Runtime error / crash loop:** the container log shows env validation ("Invalid environment configuration",
+    "Production requires: DATABASE_URL, REDIS_URL", or "MB_DEV_FAKE_ZOHO=true is a local development mode and is
+    refused": unset that variable, it must never be set in production). 403s on every non-health route mean a host
+    missing from `MB_PUBLIC_API_URL` / `MB_ALLOWED_HOSTS` (the Host allow-list applies everywhere except `/health/*`).
+- **Action:** a sleeping Space wakes on the next request: open `API/health/live` or run **Keep warm** from the Actions
+  tab (it retries for ~10 minutes); re-enable the keep-warm workflow if GitHub disabled it. For config errors fix the
+  Space variable or secret and restart the Space; for code, fix on `main` (the deploy workflow redeploys). If the Space
+  status stays "Starting" while the log shows `merchantbridge api listening`, check `PORT` = `app_port` = 8787 (see
+  [deploy.md](deploy.md#5-deploy-to-the-space-github-actions)). On the optional Fly host the equivalent checks are
+  `fly status`, `fly logs` and `fly machine start`.
 
 ## HTTP 400 from `/mcp/demo` or `/api/explorer/call`
 
@@ -169,9 +205,13 @@ token` when Zoho was unreachable, in which case that token lingers until Zoho ev
 
 ## Per-IP limits not applied (spoofed client IP)
 
-- **Symptoms:** one host exceeds 60 `/mcp/demo` requests per minute without 429s; the 61-request probe in
-  [deploy.md](deploy.md) §11 shows only `200`s on two runs.
-- **Diagnosis:** on Fly the caller IP comes from `Fly-Client-IP` (`MB_CLIENT_IP_SOURCE` defaults to
-  `fly-client-ip` there). If Fly passes a client-sent value through, every request can claim a new IP.
-- **Action:** `fly secrets set -a $APP MB_CLIENT_IP_SOURCE=socket` (all traffic then shares the proxy's bucket:
-  strict but safe), record the finding in `docs/STATUS.md`, and revisit with Fly's documented headers.
+- **Symptoms:** one host exceeds 60 `/mcp/demo` requests per minute without 429s; probe (a) in
+  [deploy.md](deploy.md#8-verify-production) §8 shows only `200`s on two runs. The opposite failure, probe (b): a
+  visitor on another network gets 429 right after someone else used up "their" bucket.
+- **Diagnosis:** on the Hugging Face Space the caller IP is the right-most `X-Forwarded-For` entry
+  (`MB_CLIENT_IP_SOURCE=xff-last`, UNVERIFIED until the probes pass). Only `200`s means a client-sent value ends up
+  right-most (spoofable); a shared 429 means the right-most entry is an internal proxy address shared by everyone.
+  (On the optional Fly host the source is `Fly-Client-IP` and the same probe uses that header.)
+- **Action:** spoofable: set the Space variable `MB_CLIENT_IP_SOURCE=socket` and restart (all traffic then shares one
+  bucket: strict but safe). Shared bucket: safe as is, but reviewers share 60 requests per minute; record it and
+  revisit with the platform's documented headers. Either way, record the finding in `docs/STATUS.md`.

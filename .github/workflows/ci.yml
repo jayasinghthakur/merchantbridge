@@ -110,8 +110,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # Builds the Fly image exactly as deploys do (context = repo root), without pushing it anywhere. Docker is not
-  # installed on the dev machine, so this job is the first real build of apps/api/Dockerfile.
+  # Builds the API image from apps/api/Dockerfile (context = repo root), without pushing it anywhere. The Hugging Face
+  # Space builds the same Dockerfile over the same files (deploy/hf-space/assemble.sh). Docker is not installed on the
+  # dev machine, so this job is the first real build of apps/api/Dockerfile.
   docker:
     name: docker build (api image)
     runs-on: ubuntu-latest
@@ -134,7 +135,8 @@ jobs:
           docker image ls "$IMAGE" --format 'size: {{.Size}}'
           # Runs as the non-root node user (uid 1000).
           test "$(docker run --rm "$IMAGE" id -u)" = "1000"
-          # The fly.toml release_command loads, then refuses to run without DATABASE_URL (exit 1).
+          # The migration entrypoint (run by hand before a Space deploy; Fly's release_command) loads, then refuses to
+          # run without DATABASE_URL (exit 1).
           if out=$(docker run --rm "$IMAGE" /app/apps/api/node_modules/.bin/tsx /app/apps/api/scripts/migrate.ts 2>&1); then
             echo "::error::migrate.ts exited 0 without DATABASE_URL"; exit 1
           fi

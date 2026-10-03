@@ -7,6 +7,7 @@ It is a Razorpay FDE take-home (Option 3) and v1 of a real product. The full pla
 `docs/PLAN.md`; milestone prompts are in `docs/prompts/M*.md`; current progress is in `docs/STATUS.md`.
 
 ## Golden rules
+
 1. **Read-only, enforced server-side.** ZohoClient issues GET only; only `ZohoInventory.*.READ` scopes; no write tools.
    MCP `readOnlyHint` is a hint, not the guarantee.
 2. **Every Zoho call goes ZohoClient → Governor.** Nothing else may reference `zohoapis` (a test enforces this).
@@ -26,13 +27,16 @@ It is a Razorpay FDE take-home (Option 3) and v1 of a real product. The full pla
 10. Tests first for risky logic (OAuth state/refresh, governor, contract). Never claim a check passed without running it.
 
 ## Stack
+
 TypeScript 6 strict, Node ≥22 (`moduleResolution: bundler`, run with `tsx`) · pnpm workspaces (`pnpm -r`) ·
 Zod 4 · MCP TS SDK **v2** (`@modelcontextprotocol/server|client|fastify`, exact-pinned) · Fastify 5 ·
 Drizzle + Postgres (Neon in prod, PGlite in tests) · Redis via ioredis (Upstash in prod; `MemoryKv` in tests) ·
 Next.js 16 + Tailwind 4 · `@anthropic-ai/sdk` (`mcpTools` + `toolRunner`) · Pino · Vitest · Playwright.
-Hosting: apps/web on Vercel, apps/api on Fly.io (always warm). No Turborepo, Docker Compose, OTel or Python services.
+Hosting ($0, no card — a hard requirement): apps/web on Vercel Hobby, apps/api as a Hugging Face Docker Space (keep-warm
+workflow), Neon free, Upstash free; Fly.io only as an optional paid alternative. No Turborepo, Docker Compose, OTel.
 
 ## Layout
+
 ```
 apps/api                 Fastify: /mcp (bearer mb_live_), /mcp/demo, /oauth/zoho/*, /api/playground (SSE), /api/explorer, /health/*
 apps/web                 Next.js site: /, /playground, /tools, /connect, /docs
@@ -44,9 +48,11 @@ packages/zoho-inventory  ZohoClient, mappers, tools, FakeZoho (wire-accurate fak
 evals/                   scenario questions + expected tool calls, run through the same toolRunner loop
 docs/                    PLAN.md, STATUS.md, agent-capabilities.md, mcp-tools.json (generated), adr/, notes/, vendor/zoho/
 ```
+
 Workspace packages are consumed as TS source (`exports: ./src/index.ts`); import them as `@mb/<name>`.
 
 ## Commands
+
 - `pnpm i` · `pnpm lint` · `pnpm typecheck` · `pnpm test` · `pnpm build`
 - One package: `pnpm --filter @mb/governor test` · one test: `pnpm --filter @mb/governor exec vitest run -t "code 44"`
 - `pnpm dev:api` (Fastify on :8787) · `pnpm dev:web` (Next on :3000) · `pnpm evals` · `pnpm gen:tools`
@@ -55,6 +61,7 @@ Workspace packages are consumed as TS source (`exports: ./src/index.ts`); import
 - Add to Claude Code: `claude mcp add --transport http mb-demo http://localhost:8787/mcp/demo`
 
 ## Zoho facts (from official docs; see docs/notes/zoho.md)
+
 - API: `{api_domain}/inventory/v1` (e.g. `https://www.zohoapis.in`). Header `Authorization: Zoho-oauthtoken <token>`.
   `organization_id` query param on every call except `GET /organizations` and `/organizations/{id}`.
 - Accounts host per DC from `https://accounts.zoho.com/oauth/serverinfo` (ca = accounts.zohocloud.ca). Exchange the
@@ -64,7 +71,7 @@ Workspace packages are consumed as TS source (`exports: ./src/index.ts`); import
   client** (21st silently kills the oldest). Access token ≈1 h. Revoke: `POST {accounts}/oauth/v2/revoke/token`.
   PKCE is documented for public clients only — do not claim PKCE.
 - Scopes (request all on first consent): `ZohoInventory.settings.READ,items.READ,salesorders.READ,invoices.READ,
-  contacts.READ,packages.READ,shipmentorders.READ,customerpayments.READ`.
+contacts.READ,packages.READ,shipmentorders.READ,customerpayments.READ`.
 - Pagination: `page`, `per_page` (default 200; cap at 200, max UNVERIFIED), `page_context.has_more_page`.
 - Body `code: 0` = success; non-zero is an error even on HTTP 200. 401 = bad token.
 - Limits per org: 100 req/min (429 code 44, org blocked), daily by plan 1k/2k/5k/10k/10k (429 code 45),
@@ -74,6 +81,7 @@ Workspace packages are consumed as TS source (`exports: ./src/index.ts`); import
   list endpoint — use `/packages`. `GET /salesorders/{id}` embeds packages, shipments and invoices.
 
 ## Tool conventions
+
 - Server name `merchantbridge`; tool names `zoho_<verb>_<noun>`; deterministic `tools/list` order.
 - Description = what it returns + "Use when…" + "Don't use when… (use X instead)" + limits.
 - Every tool declares Zod input and output; MCP gets `inputSchema`, `outputSchema`, `structuredContent` + text copy.
@@ -85,22 +93,27 @@ Workspace packages are consumed as TS source (`exports: ./src/index.ts`); import
   UPSTREAM_ERROR. JSON-RPC errors only for unknown tools / malformed requests.
 
 ## MCP + LLM specifics
+
 - Mount with `createMcpFastifyApp({ host: '0.0.0.0', allowedHosts })`; keep `legacy: 'stateless'` (never `'reject'`).
 - `clientInfo` arrives per request in `_meta`; telemetry label only, never used for authz.
-- Playground and evals: `tool_choice: auto` (forced choice 400s on Sonnet/Opus 5.5). Playground model
-  `claude-haiku-4-5`; evals also on `claude-sonnet-5-5`. Load the `claude-api` skill before touching Anthropic code.
+- Playground and evals run on a free OpenAI-compatible provider by default (`MB_LLM_PROVIDER=openai`, Groq,
+  `llama-3.3-70b-versatile`); Anthropic is optional (`MB_LLM_PROVIDER=anthropic`, paid). Never make a paid provider the
+  default. `tool_choice: auto` everywhere. Load the `claude-api` skill before touching the Anthropic path.
 
 ## Definition of done
+
 Contract + failure tests pass on FakeZoho · `pnpm lint typecheck test` green · tool listed in `docs/mcp-tools.json`
 (`pnpm gen:tools`) and `docs/agent-capabilities.md` · ≥1 eval covers it · usage event emitted · `docs/STATUS.md` updated.
 Conventional commits (`feat(zoho): add zoho_get_item`); one milestone = one branch/PR.
 
 ## Brand / UI
+
 "Agent Studio-style", independent; not-affiliated footer; no Razorpay logos/trade dress. Theme: surface #F7F6F2 /
 #0E1513, ink #0F1A17 / #ECF2EF, brand Bridge Green #0B6E58 / #3DD6A8, accent Saffron #E8912A / #F5B14F (sparingly),
 Manrope + JetBrains Mono, radius 6/10/16, hairline borders over shadows, no gradients, no emoji. Always-visible
 DEMO DATA badge on demo surfaces; loading/empty/error states; works at 390px; light + dark.
 
 ## When unsure
+
 Ask one specific question rather than guessing an API shape. If the plan and reality disagree, write an ADR in
 `docs/adr/` and update `docs/PLAN.md`.

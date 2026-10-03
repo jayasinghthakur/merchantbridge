@@ -34,7 +34,7 @@ are connector (written per vendor), plus what a platform team could provide.
 | 2   | Client + error mapping + fake upstream wire tests                            | wire tests green                       |
 | 3   | Tools + mappers; contract suite unchanged                                    | contract suite green on fake           |
 | 4   | OAuth leg 1 for the vendor; tenant connection; governor profile              | 20-parallel refresh test, live connect |
-| 5   | Evals, CAN/CANNOT, `mcp-tools.json`, recorded fixtures, review               | evals >= 90% on Sonnet                 |
+| 5   | Evals, CAN/CANNOT, `mcp-tools.json`, recorded fixtures, review               | evals >= 90% on the gated model        |
 
 Measured on this project (fill at M5): days spent on platform pieces vs Zoho-specific pieces: `TODO`.
 

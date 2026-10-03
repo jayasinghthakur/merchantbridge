@@ -47,7 +47,7 @@ npx @modelcontextprotocol/inspector --cli "$API/mcp/demo" --transport http --met
    exists, say so and continue with step 4.
 3. If the Playwright MCP server is connected (see `.mcp.json.example`), use it on prod to click one scenario card.
    Confirm that at least one tool step appears and that an answer arrives. Run the card only once, because every
-   run spends from the Anthropic budget.
+   run spends from the LLM provider's free daily quota.
 
 ## 4. Screenshots: capture and read back
 
