@@ -1,7 +1,8 @@
 # Integration: merchant onboarding in 10 minutes
 
 Who this is for: a merchant (or the FDE helping them) who wants their Claude agents to read Zoho Inventory. The result
-is one read-only connection, shared by every agent the merchant runs, with one API key per agent host.
+is one read-only connection per Zoho organization, shared by every agent the merchant runs through one API key (v1
+issues exactly one key per connect).
 
 Placeholders: `API` = the MerchantBridge API origin (e.g. `https://<app>.fly.dev`), `WEB` = the site.
 
@@ -14,16 +15,20 @@ Placeholders: `API` = the MerchantBridge API origin (e.g. `https://<app>.fly.dev
 ## 1. Connect Zoho (3 min)
 
 1. Open `WEB/connect`, enter the invite code, pick your Zoho data center (India, US, EU, Australia, Japan, Canada,
-   Saudi Arabia; UK and China are not supported because Zoho documents no Inventory API host / accounts server for
-   them).
+   Saudi Arabia; UK, China, UAE and Singapore are not supported because Zoho documents no Inventory API host /
+   accounts server pair for them).
 2. Zoho shows the consent screen with **eight READ-only scopes** (settings, items, sales orders, invoices, contacts,
    packages, shipment orders, customer payments). Approve.
-3. Pick the organization if you have several.
+3. MerchantBridge connects the Zoho user's **default organization** (the first one if none is marked default). There is
+   no organization picker yet; to connect another organization, make it the default in Zoho first.
 4. You land on `WEB/connect/success` with a key `mb_live_…`. **It is shown once.** It travels in the URL fragment,
    which browsers never send to servers, so it is not in any log. Copy it into your secret manager.
 
-What happened: MerchantBridge stored an encrypted Zoho refresh token for this organization. Zoho tokens never leave
-the server; agents only ever hold the `mb_live_` key.
+What happened: MerchantBridge created a tenant for this organization, stored an encrypted Zoho refresh token for it
+and minted one key (only its SHA-256 hash is stored). Zoho tokens never leave the server; agents only ever hold the
+`mb_live_` key. **Connect each organization once and share the key across agent hosts:** every connect creates a
+new tenant and key, and two tenants of one organization get separate rate budgets that together can exceed Zoho's
+per-org limit ([ADR-0008](adr/0008-tenant-per-connect-and-disconnect.md)).
 
 ## 2. Check it (30 s)
 
@@ -75,7 +80,7 @@ for await (const msg of query({
 ```
 
 Python: `ClaudeAgentOptions(mcp_servers={"merchantbridge": {"type": "http", "url": "API/mcp", "headers": {...}}},
-allowed_tools=["mcp__merchantbridge__*"])`. A runnable Python example lives in `examples/python/` (M5).
+allowed_tools=["mcp__merchantbridge__*"])`. No runnable Python example ships yet (planned in PLAN M5, not built).
 
 **Messages API (MCP connector beta)** — Anthropic calls the endpoint for you:
 
@@ -114,15 +119,31 @@ URL `API/mcp`, header `Authorization: Bearer mb_live_…`.
 
 Read-only: requests to cancel, edit or email are refused by design ([agent-capabilities.md](agent-capabilities.md)).
 
-## 5. Rotate, revoke, disconnect
+## 5. Disconnect, rotate, revoke
 
-- **Rotate a key:** mint a new key on `WEB/connect`, update the agent host, revoke the old key. Revoked keys get 401
-  immediately.
-- **Disconnect Zoho:** `WEB/connect` -> Disconnect revokes the Zoho refresh token at Zoho and marks the connection
-  revoked; all keys for the tenant stop working.
-- **Merchant-side revoke:** the Zoho user can also remove access under Zoho Accounts -> Sessions -> Connected Apps;
-  agents then get `RECONNECT_REQUIRED`.
-- Re-consent sparingly: Zoho keeps at most 20 refresh tokens per user and silently drops the oldest (runbook).
+**Disconnect (the merchant's off switch).** Call it with the key you want to retire:
+
+```sh
+curl -X POST API/api/connection/disconnect -H "Authorization: Bearer $MB_API_KEY"
+# 200 {"revoked_locally":true,"revoked_at_zoho":true,"had_connection":true}
+```
+
+In this order it revokes the Zoho refresh token at Zoho, drops the cached access token, marks the connection revoked
+and revokes the key. If Zoho cannot be reached, everything local still happens and `revoked_at_zoho` is `false`
+(the merchant can finish the job under Zoho Accounts -> Connected Apps). Afterwards the key gets HTTP 401 on `/mcp`
+and on a second disconnect. Limits: 5 disconnects per key per minute; only `POST` (other methods answer 405). The
+`/docs` page shows the same command with your API host filled in.
+
+**Rotate a key.** There is no "mint another key" endpoint in v1. Connect again at `WEB/connect` (you get a new
+tenant and a new key), switch every agent host to the new key, then disconnect with the **old** key so its refresh
+token and connection are revoked too.
+
+**Merchant-side revoke at Zoho.** Removing MerchantBridge under Zoho Accounts -> Connected Apps makes tool calls
+return `RECONNECT_REQUIRED` once Zoho rejects the token. The key itself stays valid until disconnected: reconnect for a
+new key, then disconnect the old one.
+
+**Re-consent sparingly.** Zoho keeps at most 20 refresh tokens per user per client and silently drops the oldest, so
+repeated connects can disable an older connection ([runbook](runbook.md)).
 
 ## Self-host
 
@@ -130,12 +151,14 @@ Read-only: requests to cancel, edit or email are refused by design ([agent-capab
 
 ```sh
 pnpm i
-pnpm dev:api   # Fastify on http://localhost:8787, /mcp/demo on FakeZoho, in-memory Kv
+pnpm dev:api   # Fastify on http://localhost:8787, /mcp/demo on FakeZoho, in-memory stores and Kv
 pnpm dev:web   # Next.js on http://localhost:3000
-claude mcp add --transport http mb-local http://localhost:8787/mcp/demo
+claude mcp add --transport http mb-demo http://localhost:8787/mcp/demo
 ```
 
-The playground needs `ANTHROPIC_API_KEY` and `MB_PLAYGROUND_ENABLED=true`; everything else works without keys.
+The explorer at `/tools` works without any key. The playground needs `ANTHROPIC_API_KEY` and
+`MB_PLAYGROUND_ENABLED=true` in the environment of `pnpm dev:api` (apps/api loads no `.env` file). Without the Zoho
+variables below, `/oauth/zoho/start` redirects to `/connect/error?reason=connect_disabled`.
 
 **Your own deployment (live Zoho):**
 
@@ -144,21 +167,26 @@ The playground needs `ANTHROPIC_API_KEY` and `MB_PLAYGROUND_ENABLED=true`; every
    for all data centers". Create a second client for local development so local re-consents cannot evict production
    tokens.
 2. Postgres (Neon or any) and Redis (Upstash or any); production refuses to start without `DATABASE_URL` and
-   `REDIS_URL`. Apply `packages/db/drizzle/*.sql` (e.g. `pnpm --filter @mb/db exec drizzle-kit migrate`).
+   `REDIS_URL`. Apply `packages/db/drizzle/*.sql` with
+   `DATABASE_URL=... pnpm --filter @mb/api exec tsx scripts/migrate.ts` (on Fly this is the `release_command`).
 3. Environment (names from `apps/api/src/config.ts`):
 
-| Variable                                                                                       | Purpose                                                                        |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `MB_PUBLIC_API_URL`, `MB_PUBLIC_WEB_URL`                                                       | public origins; API host is added to the MCP Host allow-list                   |
-| `MB_ALLOWED_HOSTS`, `MB_CORS_ORIGINS`                                                          | extra hostnames for the Host check; browser origins for `/api/*`               |
-| `DATABASE_URL`, `REDIS_URL`                                                                    | stores and governor/cache/locks                                                |
-| `MB_ENCRYPTION_KEY`                                                                            | base64 of 32 random bytes (`openssl rand -base64 32`); encrypts refresh tokens |
-| `MB_STATE_SECRET`                                                                              | HMAC key for OAuth `state`                                                     |
-| `MB_CONNECT_INVITE_CODE`                                                                       | gate for `/connect`                                                            |
-| `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REDIRECT_URI`                                    | the PROD Zoho client                                                           |
-| `ANTHROPIC_API_KEY`, `MB_PLAYGROUND_ENABLED`, `MB_PLAYGROUND_MODEL`, `MB_PLAYGROUND_DAILY_CAP` | playground (use a spend-capped workspace key)                                  |
-| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`                                                   | bot check on the first playground message                                      |
-| `MB_TRUSTED_EGRESS_CIDRS`                                                                      | CIDRs (e.g. Anthropic MCP egress) that share a larger `/mcp/demo` bucket       |
+| Variable                                                                                       | Purpose                                                                                             |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `MB_PUBLIC_API_URL`, `MB_PUBLIC_WEB_URL`                                                       | public origins; API host is added to the MCP Host allow-list                                        |
+| `MB_ALLOWED_HOSTS`, `MB_CORS_ORIGINS`                                                          | extra hostnames for the Host check; browser origins for `/api/*`                                    |
+| `DATABASE_URL`, `REDIS_URL`                                                                    | stores and governor/cache/locks                                                                     |
+| `MB_ENCRYPTION_KEY`                                                                            | base64 of 32 random bytes (`openssl rand -base64 32`); encrypts refresh tokens                      |
+| `MB_STATE_SECRET`                                                                              | HMAC key for OAuth `state`                                                                          |
+| `MB_CONNECT_INVITE_CODE`                                                                       | gate for `/connect`                                                                                 |
+| `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REDIRECT_URI`                                    | the PROD Zoho client                                                                                |
+| `ANTHROPIC_API_KEY`, `MB_PLAYGROUND_ENABLED`, `MB_PLAYGROUND_MODEL`, `MB_PLAYGROUND_DAILY_CAP` | playground (use a spend-capped workspace key)                                                       |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`                                                   | bot check on the first playground message                                                           |
+| `MB_TRUSTED_EGRESS_CIDRS`                                                                      | CIDRs (e.g. Anthropic MCP egress) that share a larger `/mcp/demo` bucket                            |
+| `MB_CLIENT_IP_SOURCE`                                                                          | `socket`, `fly-client-ip` (default on Fly) or `xff-last`; source of the caller IP for per-IP limits |
+| `MB_METRICS_TOKEN`                                                                             | bearer token for `/metrics` (404 in production without it)                                          |
 
-`/connect` is disabled unless all Zoho, encryption, state and invite variables are set. 4. Deploy `apps/api` (Fly.io, `min_machines_running = 1`, so SSE and MCP stay warm) and `apps/web` (Vercel). Verify
-`API/health/ready`, then repeat steps 1-3 above against your URLs.
+`/connect` is disabled unless all Zoho, encryption, state and invite variables are set.
+
+4. Deploy `apps/api` (Fly.io, `min_machines_running = 1`, so SSE and MCP stay warm) and `apps/web` (Vercel); the
+   full procedure is [deploy.md](deploy.md). Verify `API/health/ready`, then repeat steps 1-3 above against your URLs.

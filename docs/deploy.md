@@ -1,7 +1,8 @@
 # Deploying MerchantBridge
 
 Step-by-step for the **human** operator. Claude prepares the config but never sets secrets: `fly secrets`,
-`vercel env` and `gh secret` are denied to it (`.claude/settings.next.json`). Placeholders used below: `APP` is the
+`vercel env` and `gh secret` are denied to it by the active project settings (`.claude/settings.json`, which apply
+when Claude Code is started inside this repository directory). Placeholders used below: `APP` is the
 Fly app name, `API` is `https://APP.fly.dev`, `WEB` is the Vercel production URL. Never paste secret values into
 issues, PRs, chats or this file.
 
@@ -64,9 +65,18 @@ rewrites `fly.toml`.
 | `TURNSTILE_SITE_KEY`      | playground bot check        | Turnstile widget site key (served to the browser via `/api/status`).                                                                              |
 | `TURNSTILE_SECRET_KEY`    | playground bot check        | Turnstile widget secret.                                                                                                                          |
 | `MB_TRUSTED_EGRESS_CIDRS` | `/mcp/demo` limits          | Optional. Comma-separated CIDRs copied from Anthropic's published outbound IP list, so Claude.ai / Messages API traffic shares one larger bucket. |
+| `MB_METRICS_TOKEN`        | `/metrics`                  | Optional. Bearer token for the Prometheus scrape. Without it `/metrics` answers 404 in production (it is open only in dev/test).                  |
 
-Optional, not secret: `MB_ALLOWED_HOSTS` (extra API hostnames, e.g. a custom domain, see §9) and
-`DATABASE_URL_UNPOOLED` (Neon's **direct** string; if set, only the migration step uses it, as `@mb/db` recommends).
+Optional, not secret: `MB_ALLOWED_HOSTS` (extra API hostnames, e.g. a custom domain, see §9),
+`DATABASE_URL_UNPOOLED` (Neon's **direct** string; if set, only the migration step uses it, as `@mb/db` recommends)
+and `MB_CLIENT_IP_SOURCE`.
+
+`MB_CLIENT_IP_SOURCE` decides which address the per-IP limits (`/mcp/demo`, explorer, playground, OAuth start,
+failed-key lookups) and Turnstile see: `socket` (the TCP peer), `fly-client-ip` (Fly's edge header) or `xff-last`
+(right-most `X-Forwarded-For` entry, for one generic reverse proxy). **Leave it unset on Fly**: it defaults to
+`fly-client-ip` whenever `FLY_APP_NAME` is present (Fly sets it on every machine) and to `socket` elsewhere. A
+client-sent `X-Forwarded-For` is never trusted unless you choose `xff-last`. Whether Fly overwrites a client-sent
+`Fly-Client-IP` is UNVERIFIED; §11 has the probe.
 
 `/connect` stays disabled unless all six of `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REDIRECT_URI`,
 `MB_ENCRYPTION_KEY`, `MB_STATE_SECRET` and `MB_CONNECT_INVITE_CODE` are set. The playground needs
@@ -102,7 +112,7 @@ it stays out of shell history (bash `HISTCONTROL=ignorespace`, zsh `setopt HIST_
    ZOHO_CLIENT_ID='…' ZOHO_CLIENT_SECRET='…' ZOHO_REDIRECT_URI='https://APP.fly.dev/oauth/zoho/callback' \
    ANTHROPIC_API_KEY='…' MB_PLAYGROUND_ENABLED='true' \
    TURNSTILE_SITE_KEY='…' TURNSTILE_SECRET_KEY='…' \
-   MB_TRUSTED_EGRESS_CIDRS='…'
+   MB_TRUSTED_EGRESS_CIDRS='…' MB_METRICS_TOKEN='…'
 fly secrets list -a APP      # names and digests only
 ```
 
@@ -139,8 +149,8 @@ curl -sS -X POST API/mcp/demo -H 'Content-Type: application/json' \
 ```
 
 `storage: "memory"` or `kv: "memory-kv"` on Fly means a secret is missing (production refuses to boot without
-`DATABASE_URL`/`REDIS_URL`, so check `fly logs`). Then run `/verify-prod API WEB` in Claude Code, and connect the
-Zoho trial org through `WEB/connect` with the invite code (PLAN M2 done-when).
+`DATABASE_URL`/`REDIS_URL`, so check `fly logs`). Then run the full checks in §11, `/verify-prod API WEB` in Claude
+Code, and connect the Zoho trial org through `WEB/connect` with the invite code (PLAN M2 done-when).
 
 ## 7. Vercel (apps/web)
 
@@ -200,3 +210,58 @@ image inputs, and skips with a notice while no token is set.
   Migrations are forward-only; a rollback across a schema change needs a compatible schema.
 - **Scaling note:** one machine is the design. Before adding a second, remember the governor, token cache and
   limits live in Redis (shared) but `release_command` must stay the only migration runner.
+
+## 11. Verify production
+
+Run after the first deploy and after any change to proxies, limits or the web build. `API` and `WEB` as above.
+
+**1. Health and storage.**
+
+```sh
+curl -sS API/health/ready
+# 200 {"ok":true,"storage":"postgres","kv":"redis","checks":{"kv":true,"store":true},"version":"0.1.0"}
+curl -sS -o /dev/null -w '%{http_code}\n' API/metrics    # 404 without MB_METRICS_TOKEN, 401 with it but no bearer
+```
+
+**2. MCP over the wire (Inspector CLI).** Expect the 10 tools in alphabetical order, the same list as
+[`mcp-tools.json`](mcp-tools.json):
+
+```sh
+npx @modelcontextprotocol/inspector --cli API/mcp/demo --transport http --method tools/list
+```
+
+**3. Spoofed `Fly-Client-IP` probe.** The per-IP limits on Fly rely on Fly's edge overwriting any client-sent
+`Fly-Client-IP` (UNVERIFIED; see `resolveClientIp` in [`apps/api/src/http-util.ts`](../apps/api/src/http-util.ts)).
+From one machine, send 61 requests to `/mcp/demo`, each claiming a different client IP:
+
+```sh
+for i in $(seq 1 61); do
+  curl -s -o /dev/null -w '%{http_code}\n' -X POST API/mcp/demo \
+    -H "Fly-Client-IP: 198.51.100.$i" -H 'Content-Type: application/json' \
+    -H 'Accept: application/json, text/event-stream' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+done | sort | uniq -c
+```
+
+- **Pass:** at least one `429` (the limit is 60 per minute per caller IP; `60 200` + `1 429` when the run fits in one
+  minute window). The window is fixed per minute, so a run that straddles a minute boundary can show 61 `200`s: run it
+  again immediately.
+- **Fail:** 61 `200`s on two consecutive runs means the header is client-controlled. Set
+  `fly secrets set -a APP MB_CLIENT_IP_SOURCE=socket` (then every caller behind Fly's proxy shares one bucket, which
+  is safe but strict) and record the result in `docs/STATUS.md`.
+- Wait a minute afterwards: the probe uses up this host's `/mcp/demo` bucket.
+
+**4. Real-stack browser suite** (no mocks; the specs discover the API origin from the deployed bundle's own requests):
+
+```sh
+PLAYWRIGHT_BASE_URL=WEB pnpm --filter @mb/web exec playwright test -c playwright.real.config.ts
+```
+
+It asserts the live tool count, the docs page's demo URL answering `tools/list`, the explorer running `zoho_get_item`
+and the code-44 fault, the connect and playground states, and writes screenshots at 390 and 1440 px in light and dark
+to `apps/web/e2e-real/screenshots/` for review. With connect and the playground enabled on prod, those two specs check
+the enabled state instead of the disabled note and make no model call. Do not run it within a minute of the probe above.
+
+**5. One live tenant.** After connecting the trial org: `zoho_get_connection_status` over `/mcp` with the key returns
+the organization ([integration.md](integration.md) §2), and a disposable second connection can be switched off with
+`POST API/api/connection/disconnect` (§5 of the same page).
