@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:fake-live": "MB_DEV_FAKE_ZOHO=true tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",

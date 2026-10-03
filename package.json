@@ -12,6 +12,7 @@
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "dev:api": "pnpm --filter @mb/api dev",
+    "dev:api:fake-live": "pnpm --filter @mb/api dev:fake-live",
     "dev:web": "pnpm --filter @mb/web dev",
     "gen:tools": "pnpm --filter @mb/api gen:tools",
     "evals": "pnpm --filter @mb/evals evals",

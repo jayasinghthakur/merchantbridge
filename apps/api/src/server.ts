@@ -1,15 +1,38 @@
 import { buildApp, createAppParts } from './app';
 import { loadConfig } from './config';
 import { createAppContext } from './context';
+import { FAKE_LIVE_ENV, assertFakeLiveAllowed, fakeLiveRequested } from './dev/flag';
 
 const RETENTION_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 async function main(): Promise<void> {
-  const config = loadConfig();
-  const ctx = await createAppContext(config);
+  // Local "fake live" mode (MB_DEV_FAKE_ZOHO=true): refused in production before anything else runs; the fake
+  // upstream module is only loaded when the flag is on.
+  assertFakeLiveAllowed(process.env);
+  const fakeLiveMod = fakeLiveRequested(process.env) ? await import('./dev/fake-live') : null;
+  const fakeLive = fakeLiveMod ? fakeLiveMod.prepareFakeLive(process.env) : null;
+
+  const config = loadConfig(fakeLive ? fakeLive.env : process.env);
+  const ctx = await createAppContext(config, fakeLive ? { fetch: fakeLive.upstream.fetch } : {});
   const parts = createAppParts(ctx);
   const app = await buildApp(ctx, parts);
+
+  let fakeLiveBanner: string | null = null;
+  if (fakeLiveMod && fakeLive) {
+    ctx.log.warn(
+      { fake_live: true, ephemeral: fakeLive.filled },
+      `${FAKE_LIVE_ENV}=true: local dev only; all Zoho traffic goes to an in-process fake and any other outbound host is refused. The listed variables were missing and got ephemeral dev-only values that change on every restart.`,
+    );
+    fakeLiveMod.registerFakeConsent(app, { ctx, setup: fakeLive });
+    const seeded = await fakeLiveMod.seedFakeLiveTenant(ctx, fakeLive.upstream);
+    fakeLiveBanner = fakeLiveMod.fakeLiveBanner({
+      apiBase: fakeLive.apiBase,
+      webBase: config.env.MB_PUBLIC_WEB_URL,
+      seeded,
+      defaultInvite: fakeLive.defaultInvite,
+    });
+  }
 
   const host = config.isProd ? '0.0.0.0' : config.env.HOST;
   await app.listen({ host, port: config.env.PORT });
@@ -21,9 +44,13 @@ async function main(): Promise<void> {
       kv: ctx.kvMode,
       connect_enabled: config.connectEnabled,
       playground_model: config.env.MB_PLAYGROUND_MODEL,
+      ...(fakeLive ? { fake_live: true } : {}),
     },
     'merchantbridge api listening',
   );
+  // Plain text, not a JSON log record, so the commands stay copy-pasteable. The key is for a fake tenant in an
+  // in-memory store and dies with the process; nothing else secret is printed.
+  if (fakeLiveMod && fakeLiveBanner) fakeLiveMod.printAfterLogs(ctx.log, fakeLiveBanner);
 
   // Usage events are an audit trail, kept for 30 days.
   const retention = async (): Promise<void> => {
