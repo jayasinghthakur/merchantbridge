@@ -19,7 +19,7 @@ export const PRIMARY_GATE = 0.9;
 
 /** Models per provider when --models is not given; the first is the gated primary. */
 export const DEFAULT_MODELS: Readonly<Record<LlmProviderName, readonly string[]>> = {
-  openai: ['llama-3.3-70b-versatile'],
+  openai: ['openai/gpt-oss-120b'],
   anthropic: ['claude-sonnet-5-5', 'claude-haiku-4-5'],
 };
 

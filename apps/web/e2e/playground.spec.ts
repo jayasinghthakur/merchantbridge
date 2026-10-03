@@ -9,7 +9,7 @@ test.describe('playground', () => {
     await page.goto('/playground');
     await expect(page.getByTestId('demo-badge').first()).toContainText('DEMO DATA');
     // The model comes from /api/status, whichever provider the API runs.
-    await expect(page.getByTestId('live-model')).toHaveText('Live agent: llama-3.3-70b-versatile');
+    await expect(page.getByTestId('live-model')).toHaveText('Live agent: openai/gpt-oss-120b');
     await expect(page.getByText(/Claude agent/)).toHaveCount(0);
 
     await page.locator('[data-scenario="dispute-evidence"]').click();

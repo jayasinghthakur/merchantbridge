@@ -84,7 +84,7 @@ describe('public API', () => {
       version: '0.1.0',
       playground_enabled: false,
       // No provider configured: the free OpenAI-compatible default's model (the playground stays off).
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       demo_mcp_url: 'http://localhost:8787/mcp/demo',
       tool_count: 10,
       turnstile_site_key: null,

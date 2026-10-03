@@ -33,7 +33,7 @@ function caseById(id: string) {
   return c;
 }
 
-async function play(id: string, turns: readonly ScriptedTurn[], model = 'llama-3.3-70b-versatile') {
+async function play(id: string, turns: readonly ScriptedTurn[], model = 'openai/gpt-oss-120b') {
   const c = caseById(id);
   const fake = scriptedOpenAi(turns);
   const events: TraceEvent[] = [];

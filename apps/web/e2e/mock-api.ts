@@ -5,7 +5,7 @@ import type { Page, Route } from '@playwright/test';
 export const STATUS: StatusResponse = {
   version: '0.1.0',
   playground_enabled: true,
-  model: 'llama-3.3-70b-versatile',
+  model: 'openai/gpt-oss-120b',
   demo_mcp_url: 'https://api.merchantbridge.test/mcp/demo',
   tool_count: 3,
   turnstile_site_key: null,
@@ -83,7 +83,7 @@ export function sseBody(events: TraceEvent[]): string {
 }
 
 function session(faults: DemoFault[], replay = false): TraceEvent {
-  return { type: 'session', session_id: 'e2e', model: 'llama-3.3-70b-versatile', replay, faults };
+  return { type: 'session', session_id: 'e2e', model: 'openai/gpt-oss-120b', replay, faults };
 }
 
 export function disputeEvents(faults: DemoFault[] = []): TraceEvent[] {

@@ -342,7 +342,7 @@ describe('main (pnpm evals)', () => {
 });
 
 describe('main on the OpenAI-compatible provider (free default)', () => {
-  it('picks openai from MB_LLM_API_KEY and runs all 17 cases on llama-3.3-70b-versatile through runAgentOpenAI', async () => {
+  it('picks openai from MB_LLM_API_KEY and runs all 17 cases on openai/gpt-oss-120b through runAgentOpenAI', async () => {
     const out = await tempDir();
     const cap = captureIO();
     const d = openAiDeps(out, cap.io);
@@ -351,10 +351,10 @@ describe('main on the OpenAI-compatible provider (free default)', () => {
     expect(code, cap.all()).toBe(0);
 
     const files = (await readdir(out)).sort();
-    expect(files).toEqual(['2026-10-03T19-55-13Z-llama-3.3-70b-versatile.json', 'latest.md']);
+    expect(files).toEqual(['2026-10-03T19-55-13Z-openai-gpt-oss-120b.json', 'latest.md']);
     const llama = JSON.parse(await readFile(join(out, files[0]!), 'utf8'));
     expect(llama).toMatchObject({
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       summary: { total: 17, passed: 17, pass_rate: 1 },
       gate: { min_pass_rate: 0.9, passed: true },
       engine: {
@@ -366,7 +366,7 @@ describe('main on the OpenAI-compatible provider (free default)', () => {
       },
     });
     const md = await readFile(join(out, 'latest.md'), 'utf8');
-    expect(md).toContain('| llama-3.3-70b-versatile | 17/17 | 100.0% | PASS (needs ≥ 90.0%) |');
+    expect(md).toContain('| openai/gpt-oss-120b | 17/17 | 100.0% | PASS (needs ≥ 90.0%) |');
     expect(md).toContain('provider openai (`https://api.groq.com/openai/v1`)');
 
     // Every request went to Groq's chat completions with the key as a bearer token, model under test.
@@ -374,9 +374,7 @@ describe('main on the OpenAI-compatible provider (free default)', () => {
       new Set(['https://api.groq.com/openai/v1/chat/completions']),
     );
     expect(new Set(d.fake.authorizations)).toEqual(new Set([`Bearer ${FAKE_GSK}`]));
-    expect(new Set(d.fake.requests.map((r) => r.model))).toEqual(
-      new Set(['llama-3.3-70b-versatile']),
-    );
+    expect(new Set(d.fake.requests.map((r) => r.model))).toEqual(new Set(['openai/gpt-oss-120b']));
     expect(d.fake.requests[0]).toMatchObject({ tool_choice: 'auto', max_tokens: 4096 });
     // Free-tier pacing: 2.5 s between cases.
     expect(d.sleeps).toHaveLength(16);
@@ -486,7 +484,7 @@ describe('main on the OpenAI-compatible provider (free default)', () => {
         headers: { 'retry-after': '3600' },
         body: {
           error: {
-            message: 'Rate limit reached for model llama-3.3-70b-versatile on tokens per day (TPD)',
+            message: 'Rate limit reached for model openai/gpt-oss-120b on tokens per day (TPD)',
             code: 'rate_limit_exceeded',
           },
         },

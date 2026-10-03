@@ -73,7 +73,7 @@ describe('model report', () => {
 
   it('gates the primary model at 90%: 14/15 passes, 13/15 fails; the others are published as-is', () => {
     expect(PRIMARY_GATE).toBe(0.9);
-    expect(report('llama-3.3-70b-versatile', 14, 15, true).gate).toEqual({
+    expect(report('openai/gpt-oss-120b', 14, 15, true).gate).toEqual({
       min_pass_rate: 0.9,
       passed: true,
     });

@@ -28,7 +28,7 @@ export const DEFAULT_LLM_BASE_URL = 'https://api.groq.com/openai/v1';
 
 /** Playground model when MB_PLAYGROUND_MODEL is unset, per provider. */
 export const DEFAULT_PLAYGROUND_MODELS: Readonly<Record<LlmProviderName, string>> = {
-  openai: 'llama-3.3-70b-versatile',
+  openai: 'openai/gpt-oss-120b',
   anthropic: 'claude-haiku-4-5',
 };
 
@@ -37,6 +37,51 @@ const optionalProvider = optionalString
   .pipe(z.enum(LLM_PROVIDERS).optional());
 
 const optionalUrl = optionalString.pipe(z.string().url().optional());
+
+/**
+ * Connection strings are often pasted from a provider's "Connect" panel as a whole command (`redis-cli --tls -u
+ * redis://…`, `psql 'postgresql://…'`) or in quotes. Extract the URL, upgrade `redis://` to `rediss://` when the
+ * command asked for TLS, and fail with a message that names the variable (never its value).
+ */
+export function normalizeConnectionUrl(
+  raw: string | undefined,
+  kind: 'postgres' | 'redis',
+): { ok: true; value: string | undefined } | { ok: false; reason: string } {
+  if (raw === undefined) return { ok: true, value: undefined };
+  const pattern = kind === 'postgres' ? /postgres(?:ql)?:\/\/[^\s'"`]+/ : /rediss?:\/\/[^\s'"`]+/;
+  const found = pattern.exec(raw)?.[0];
+  if (!found) {
+    return {
+      ok: false,
+      reason:
+        kind === 'postgres'
+          ? 'must be a postgres:// or postgresql:// connection URL'
+          : 'must be a redis:// or rediss:// URL (for Upstash: rediss://default:<password>@<host>.upstash.io:6379, not the REST URL)',
+    };
+  }
+  let value = found;
+  if (kind === 'redis' && value.startsWith('redis://') && /(^|\s)--tls(\s|$)/.test(raw)) {
+    value = `rediss://${value.slice('redis://'.length)}`;
+  }
+  try {
+    const u = new URL(value);
+    if (!u.hostname) throw new Error('no host');
+  } catch {
+    return { ok: false, reason: 'is not a parseable URL' };
+  }
+  return { ok: true, value };
+}
+
+function connectionUrl(kind: 'postgres' | 'redis') {
+  return optionalString.transform((v, ctx) => {
+    const r = normalizeConnectionUrl(v, kind);
+    if (!r.ok) {
+      ctx.addIssue({ code: 'custom', message: r.reason });
+      return z.NEVER;
+    }
+    return r.value;
+  });
+}
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -51,8 +96,8 @@ const envSchema = z.object({
   MB_ALLOWED_HOSTS: list,
   /** Browser origins allowed by CORS (the web URL is always included). Supports a trailing '*' wildcard. */
   MB_CORS_ORIGINS: list,
-  DATABASE_URL: optionalString,
-  REDIS_URL: optionalString,
+  DATABASE_URL: connectionUrl('postgres'),
+  REDIS_URL: connectionUrl('redis'),
   /** base64 of 32 random bytes; AES-256-GCM key for refresh tokens. */
   MB_ENCRYPTION_KEY: optionalString,
   /** HMAC secret for OAuth state. */

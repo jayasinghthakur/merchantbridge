@@ -32,8 +32,9 @@ TypeScript 6 strict, Node ≥22 (`moduleResolution: bundler`, run with `tsx`) ·
 Zod 4 · MCP TS SDK **v2** (`@modelcontextprotocol/server|client|fastify`, exact-pinned) · Fastify 5 ·
 Drizzle + Postgres (Neon in prod, PGlite in tests) · Redis via ioredis (Upstash in prod; `MemoryKv` in tests) ·
 Next.js 16 + Tailwind 4 · `@anthropic-ai/sdk` (`mcpTools` + `toolRunner`) · Pino · Vitest · Playwright.
-Hosting ($0, no card — a hard requirement): apps/web on Vercel Hobby, apps/api as a Hugging Face Docker Space (keep-warm
-workflow), Neon free, Upstash free; Fly.io only as an optional paid alternative. No Turborepo, Docker Compose, OTel.
+Hosting ($0, no card — a hard requirement): apps/web and apps/api on Vercel Hobby (the API is bundled into one Vercel
+Function by `apps/api/scripts/build-vercel.mjs`; deploy with `bash scripts/deploy-vercel.sh`), Neon free, Upstash
+free. The Docker image stays for self-hosting; Fly.io is an optional paid alternative. No Turborepo, Docker Compose, OTel.
 
 ## Layout
 
@@ -97,7 +98,7 @@ contacts.READ,packages.READ,shipmentorders.READ,customerpayments.READ`.
 - Mount with `createMcpFastifyApp({ host: '0.0.0.0', allowedHosts })`; keep `legacy: 'stateless'` (never `'reject'`).
 - `clientInfo` arrives per request in `_meta`; telemetry label only, never used for authz.
 - Playground and evals run on a free OpenAI-compatible provider by default (`MB_LLM_PROVIDER=openai`, Groq,
-  `llama-3.3-70b-versatile`); Anthropic is optional (`MB_LLM_PROVIDER=anthropic`, paid). Never make a paid provider the
+  `openai/gpt-oss-120b` — Llama 3.3 became Enterprise-only on Groq); Anthropic is optional (`MB_LLM_PROVIDER=anthropic`, paid). Never make a paid provider the
   default. `tool_choice: auto` everywhere. Load the `claude-api` skill before touching the Anthropic path.
 
 ## Definition of done

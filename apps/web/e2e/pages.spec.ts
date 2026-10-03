@@ -60,7 +60,7 @@ test('tool explorer shows an error state with retry when the API is down', async
 test('docs keeps a Claude model in the Messages API snippet whatever the playground runs', async ({
   page,
 }) => {
-  await mockApi(page, { status: { model: 'llama-3.3-70b-versatile' } });
+  await mockApi(page, { status: { model: 'openai/gpt-oss-120b' } });
   await page.goto('/docs');
   const snippet = page.getByTestId('docs-messages-api');
   await expect(snippet).toContainText('"model": "claude-haiku-4-5"');

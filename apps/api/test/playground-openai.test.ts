@@ -75,7 +75,7 @@ describe('LLM provider selection (env contract)', () => {
   it('defaults to openai when MB_LLM_API_KEY is set, anthropic when only ANTHROPIC_API_KEY is, else none', () => {
     expect(settings({ MB_LLM_API_KEY: TEST_LLM_KEY })).toEqual({
       provider: 'openai',
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       baseUrl: DEFAULT_LLM_BASE_URL,
       hasKey: true,
     });
@@ -147,7 +147,7 @@ describe('GET /api/status per provider', () => {
   it('reports the openai model and playground_enabled', async () => {
     const { app } = await setup();
     const status = (await app.inject({ url: '/api/status' })).json();
-    expect(status).toMatchObject({ playground_enabled: true, model: 'llama-3.3-70b-versatile' });
+    expect(status).toMatchObject({ playground_enabled: true, model: 'openai/gpt-oss-120b' });
   });
 
   it('reports a custom MB_PLAYGROUND_MODEL', async () => {
@@ -185,7 +185,7 @@ describe('GET /api/status per provider', () => {
     );
     expect((await app.inject({ url: '/api/status' })).json()).toMatchObject({
       playground_enabled: false,
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
     });
     const res = await app.inject({ method: 'POST', url: '/api/playground', payload: body() });
     expect(res.statusCode).toBe(503);
@@ -215,7 +215,7 @@ describe('POST /api/playground on the OpenAI-compatible provider', () => {
       'assistant_text',
       'done',
     ]);
-    expect(events[0]).toMatchObject({ type: 'session', model: 'llama-3.3-70b-versatile' });
+    expect(events[0]).toMatchObject({ type: 'session', model: 'openai/gpt-oss-120b' });
     expect(events[1]).toMatchObject({
       call_id: 'call_01',
       tool: 'zoho_get_item',
@@ -244,7 +244,7 @@ describe('POST /api/playground on the OpenAI-compatible provider', () => {
     expect(first.url).toBe(`${TEST_LLM_BASE_URL}/chat/completions`);
     expect(first.authorization).toBe(`Bearer ${TEST_LLM_KEY}`);
     expect(first.body).toMatchObject({
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       tool_choice: 'auto',
       max_tokens: 1024,
       temperature: 0.2,
@@ -338,7 +338,7 @@ describe('POST /api/playground on the OpenAI-compatible provider', () => {
             body: {
               error: {
                 message:
-                  'Rate limit reached for model llama-3.3-70b-versatile on tokens per minute (TPM)',
+                  'Rate limit reached for model openai/gpt-oss-120b on tokens per minute (TPM)',
                 type: 'tokens',
                 code: 'rate_limit_exceeded',
               },
@@ -370,7 +370,7 @@ describe('POST /api/playground on the OpenAI-compatible provider', () => {
       body: {
         error: {
           message:
-            'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_x` service tier `on_demand` on tokens per minute (TPM): Limit 12000, Used 9100, Requested 4100. Please try again in 6.02s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing',
+            'Rate limit reached for model `openai/gpt-oss-120b` in organization `org_x` service tier `on_demand` on tokens per minute (TPM): Limit 12000, Used 9100, Requested 4100. Please try again in 6.02s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing',
           type: 'tokens',
           code: 'rate_limit_exceeded',
         },
@@ -450,7 +450,7 @@ describe('POST /api/playground on the OpenAI-compatible provider', () => {
         body: {
           error: {
             message:
-              'Rate limit reached for model llama-3.3-70b-versatile on tokens per day (TPD): Limit 100000, Used 99990',
+              'Rate limit reached for model openai/gpt-oss-120b on tokens per day (TPD): Limit 100000, Used 99990',
             code: 'rate_limit_exceeded',
           },
         },
@@ -581,7 +581,7 @@ describe('runAgentOpenAI (shared with evals)', () => {
       llm: {
         baseUrl: TEST_LLM_BASE_URL,
         apiKey: TEST_LLM_KEY,
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-120b',
         fetch: llm.fetch,
       },
       ...extra,

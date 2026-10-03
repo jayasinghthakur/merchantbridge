@@ -8,6 +8,7 @@ export default defineConfig([
     '**/node_modules/**',
     '**/dist/**',
     '**/.next/**',
+    '**/.vercel/**',
     '**/coverage/**',
     '**/next-env.d.ts',
     'docs/vendor/**',

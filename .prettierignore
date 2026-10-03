@@ -5,3 +5,4 @@ docs/mcp-tools.json
 **/dist/
 packages/db/drizzle/
 apps/web/next-env.d.ts
+**/.vercel/
