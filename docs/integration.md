@@ -218,3 +218,13 @@ answered in-process and any other outbound host is refused. It is refused with `
 4. Deploy `apps/api` (one Vercel Function on Vercel Hobby; the Docker image or Fly.io are optional alternatives)
    and `apps/web` (Vercel Hobby) with `bash scripts/deploy-vercel.sh`; the full $0 procedure is
    [deploy.md](deploy.md). Verify `API/health/ready`, then repeat steps 1-3 above against your URLs.
+
+## Seeding your own trial org (demo data)
+
+`scripts/seed-zoho.py` fills an empty Zoho Inventory trial organization with the same demo story the public demo uses
+(items such as CHAI-250, customers including Rohan Mehta with voided orders, sales orders with Delhivery/Blue Dart
+shipments, invoices due this week and overdue, and payments referenced `pay_DEMO8xK2`, `order_DEMO7Hk2` and a UPI UTR).
+It is the only code in the repository that writes to Zoho: it is run by the org owner, with a separate 10-minute
+Self Client code (`python3 scripts/seed-zoho.py --print-scopes` prints the scope string), asks for the org name before
+writing, and skips records that already exist, so re-running is safe. The connector itself never writes.
+`--dry-run` prints every planned request without network access; `--self-test` runs the flow against a local fake.
