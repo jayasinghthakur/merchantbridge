@@ -335,7 +335,10 @@ class Seeder:
         for number, cust_i, ago, status, lines, ship, invoice in ORDERS:
             cust = f"{CUSTOMERS[cust_i][0]} {CUSTOMERS[cust_i][1]}"
             if number in existing:
-                self.log("order", f"{number} {cust}", "skipped (exists)")
+                note = "skipped (exists)"
+                if ship and status != "void":
+                    note += self.repair_shipment(number, existing[number], lines, ship)
+                self.log("order", f"{number} {cust}", note)
                 continue
             if cust not in self.contacts or any(sku not in self.items for sku, _ in lines):
                 self.log("order", f"{number} {cust}", "FAILED missing customer or item")
@@ -368,13 +371,28 @@ class Seeder:
             except ZohoError as e:
                 self.log("order", f"{number} {cust}", f"FAILED {e}")
 
+    def repair_shipment(self, number, so_id, lines, ship) -> str:
+        """Re-runs add the package + shipment to orders created earlier without one."""
+        try:
+            pkgs = self.z.call("GET", "/packages", {"salesorder_number_startswith": number}).get("packages", [])
+            if any(p.get("salesorder_number") == number for p in pkgs):
+                return ", shipment exists"
+            so = self.z.call("GET", f"/salesorders/{so_id}")
+            so_lines = (so.get("salesorder") or so.get("sales_order") or {}).get("line_items", [])
+            return self.ship(number, so_id, so_lines, lines, ship)
+        except ZohoError as e:
+            return f", SHIPPING FAILED {e}"
+
     def ship(self, number, so_id, so_lines, lines, ship) -> str:
         carrier, tracking, ago, delivered = ship
         try:
             pkg_lines = [{"so_line_item_id": sl["line_item_id"], "quantity": q}
                          for sl, (_, q) in zip(so_lines, lines) if sl.get("line_item_id")]
+            # The live API answers code 6 "It is mandatory to specify the Package Number." although packages.yml
+            # marks package_number optional (verified against Zoho on 2026-10-04).
             pkg = self.z.call("POST", "/packages", {"salesorder_id": so_id},
-                              {"date": self.day(-ago), "line_items": pkg_lines}).get("package", {})
+                              {"package_number": number.replace("SO-", "PKG-"), "date": self.day(-ago),
+                               "line_items": pkg_lines}).get("package", {})
             shipment = self.z.call(
                 "POST", "/shipmentorders", {"package_ids": pkg["package_id"], "salesorder_id": so_id},
                 {"shipment_number": number.replace("SO-", "SH-"), "date": self.day(-ago),
@@ -436,7 +454,7 @@ class Seeder:
 
 REQUIRED = {
     "/items": ["name"], "/contacts": ["contact_name"],
-    "/salesorders": ["salesorder_number", "customer_id", "line_items"], "/packages": ["date", "line_items"],
+    "/salesorders": ["salesorder_number", "customer_id", "line_items"], "/packages": ["package_number", "date", "line_items"],
     "/shipmentorders": ["shipment_number", "date", "delivery_method", "tracking_number"],
     "/invoices": ["customer_id", "line_items"], "/customerpayments": ["customer_id", "payment_mode", "amount", "invoices"],
 }
@@ -444,7 +462,7 @@ REQUIRED = {
 
 def fake_server() -> tuple[HTTPServer, list[str]]:
     errors: list[str] = []
-    state = {"n": 460000100000000, "sos": [], "skus": set()}
+    state = {"n": 460000100000000, "sos": [], "skus": set(), "lines": {}, "packed": set(), "drop_packages": False}
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):  # quiet
@@ -475,6 +493,13 @@ def fake_server() -> tuple[HTTPServer, list[str]]:
                 return self._send({"code": 0, "items": [{"item_id": "1", "sku": sku}] if sku in state["skus"] else []})
             if p == "/salesorders":
                 return self._send({"code": 0, "salesorders": state["sos"], "page_context": {"has_more_page": False}})
+            if p.startswith("/salesorders/"):
+                so_id = p.rsplit("/", 1)[1]
+                lines = state["lines"].get(so_id, [])
+                return self._send({"code": 0, "salesorder": {"salesorder_id": so_id, "line_items": lines}})
+            if p == "/packages":
+                num = q.get("salesorder_number_startswith", [""])[0]
+                return self._send({"code": 0, "packages": [{"salesorder_number": num}] if num in state["packed"] else []})
             key = {"/contacts": "contacts", "/invoices": "invoices", "/customerpayments": "customerpayments"}.get(p)
             return self._send({"code": 0, key or "x": []})
 
@@ -503,8 +528,13 @@ def fake_server() -> tuple[HTTPServer, list[str]]:
                     errors.append("POST /salesorders without ignore_auto_number_generation")
                 state["sos"].append({"salesorder_id": i, "salesorder_number": body["salesorder_number"]})
                 lines = [{"line_item_id": f"{i}{k}", "item_id": li["item_id"]} for k, li in enumerate(body["line_items"])]
+                state["lines"][i] = lines
                 return self._send({"code": 0, "sales_order": {"salesorder_id": i, "line_items": lines}}, 201)
             if p == "/packages":
+                if state["drop_packages"]:  # simulate the first live run, where package creation failed
+                    return self._send({"code": 6, "message": "It is mandatory to specify the Package Number."}, 400)
+                so_num = next((s["salesorder_number"] for s in state["sos"] if s["salesorder_id"] == q["salesorder_id"][0]), "")
+                state["packed"].add(so_num)
                 return self._send({"code": 0, "package": {"package_id": i}}, 201)
             if p == "/shipmentorders":
                 return self._send({"code": 0, "shipment_order": {"shipment_id": i}}, 201)
@@ -516,6 +546,7 @@ def fake_server() -> tuple[HTTPServer, list[str]]:
             return self._send({"code": 0, "message": "ok"})
 
     srv = HTTPServer(("127.0.0.1", 0), H)
+    srv.state = state  # type: ignore[attr-defined]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, errors
 
@@ -566,6 +597,11 @@ def main() -> None:
         token, api = exchange_code(base, "cid", "csecret", "code")
         global MIN_GAP_S
         MIN_GAP_S = 0
+        srv.state["drop_packages"] = True
+        print("== run 1 (package creation fails, like the first live run)")
+        run(Zoho(api, token, []), None, confirm=False)
+        srv.state["drop_packages"] = False
+        print("\n== run 2 (re-run: everything exists, shipments are repaired)")
         code = run(Zoho(api, token, []), None, confirm=False)
         print("\nself-test shape errors:", errors or "none")
         sys.exit(1 if errors or code else 0)
