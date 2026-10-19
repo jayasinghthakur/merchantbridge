@@ -9,9 +9,9 @@
     "evals": "tsx src/run.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.131.0",
+    "@anthropic-ai/sdk": "0.135.0",
     "@mb/api": "workspace:*",
     "@mb/core": "workspace:*",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   }
 }
